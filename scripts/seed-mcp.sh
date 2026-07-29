@@ -12,8 +12,8 @@ JPACK_CONFIG="${JPACK_CONFIG:-/projects/judgment-pack-quickstart/jpack.json}"
 i=0
 until curl -fsS -o /dev/null "$URL/health" && [ -s "$KEY_FILE" ]; do
   i=$((i + 1))
-  if [ "$i" -gt 60 ]; then
-    echo "seed-mcp: server or api key not ready after 120s" >&2
+  if [ "$i" -gt 90 ]; then
+    echo "seed-mcp: server or api key not ready after 180s" >&2
     exit 1
   fi
   sleep 2
