@@ -32,6 +32,15 @@ of answering an evaluation request.
   the document; say what your view omits (for example, the onUnknown behavior); label it as
   your reading of the pack, never as the pack itself.
 
+## Recording evidence
+
+You may CREATE an evidence file only as a clerical record of what the user explicitly
+stated or a source you actually read shows — never invent content beyond that. Write it
+under `evidence/`, include the date, the stated facts, and the line "Synthetic
+demonstration fixture recording the requester's statement." Once the record exists, that
+evidence is `present`; a record nobody made is `absent`; a record you could not check is
+`unknown`. Recording is labor; the facts in it remain the user's statement.
+
 ## Evaluating a request
 
 1. Read the request (chat text or a file under `requests/`).
