@@ -7,7 +7,7 @@
 #     --repo Judgment-Pack/judgment-pack-runtime
 
 ARG AGENT_CANVAS_VERSION=1.6.1
-ARG JUDGMENT_PACK_VERSION=0.6.2
+ARG JUDGMENT_PACK_VERSION=0.7.0
 
 FROM ghcr.io/judgment-pack/judgment-pack:${JUDGMENT_PACK_VERSION} AS runtime
 
@@ -27,11 +27,9 @@ RUN if [ "$(id -u openhands)" != "${HOST_UID}" ] || [ "$(id -g openhands)" != "$
       usermod -u "${HOST_UID}" -g "${HOST_GID}" openhands; \
       chown -R "${HOST_UID}:${HOST_GID}" /home/openhands /openhands /workspace /projects; \
     fi
-# jpack is the command; the judgment-pack name remains only for MCP settings
-# seeded into ./state before the rename. Runtime releases after the rename
-# carry /jpack instead of /judgment-pack, so bumping JUDGMENT_PACK_VERSION past
-# it means updating the source path below and dropping the compat copy.
-COPY --from=runtime --chmod=755 /judgment-pack /usr/local/bin/jpack
-COPY --from=runtime --chmod=755 /judgment-pack /usr/local/bin/judgment-pack
+# The image ships one binary: jpack. MCP settings seeded into ./state before
+# the rename launch judgment-pack, which no longer exists here: delete ./state
+# (or its agent-canvas settings) so mcp-seed registers jpack on the next boot.
+COPY --from=runtime --chmod=755 /jpack /usr/local/bin/jpack
 USER openhands
 
