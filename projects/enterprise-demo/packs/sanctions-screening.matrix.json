@@ -1,0 +1,47 @@
+{
+  "matrixVersion": "1",
+  "cases": [
+    {
+      "id": "clear-on-zero-matches",
+      "facts": { "screening": { "matchCount": "0" } },
+      "evidenceAvailability": { "screening-record": "present" },
+      "expectedDisposition": {
+        "kind": "outcome",
+        "outcomeId": "clear",
+        "reasons": [],
+        "handoff": { "state": "none" }
+      }
+    },
+    {
+      "id": "match-on-any-match",
+      "facts": { "screening": { "matchCount": "2" } },
+      "evidenceAvailability": { "screening-record": "present" },
+      "expectedDisposition": {
+        "kind": "outcome",
+        "outcomeId": "match",
+        "reasons": [],
+        "handoff": { "state": "none" }
+      }
+    },
+    {
+      "id": "unknown-count-escalates",
+      "facts": {},
+      "evidenceAvailability": { "screening-record": "present" },
+      "expectedDisposition": {
+        "kind": "unresolved",
+        "reasons": ["unknown"],
+        "handoff": { "state": "requested", "triggeredBy": ["unknown"] }
+      }
+    },
+    {
+      "id": "missing-record-escalates",
+      "facts": { "screening": { "matchCount": "0" } },
+      "evidenceAvailability": { "screening-record": "absent" },
+      "expectedDisposition": {
+        "kind": "unresolved",
+        "reasons": ["missing-required-evidence"],
+        "handoff": { "state": "requested", "triggeredBy": ["missing-required-evidence"] }
+      }
+    }
+  ]
+}

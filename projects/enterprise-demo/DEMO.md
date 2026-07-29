@@ -147,6 +147,46 @@ mismatch on bytes, have it run one evaluation and copy the actual disposition �
 are diffs, not mysteries. If time is short, stop after step 3: validated and registered is
 already the story.
 
+## Act 3 (preview) — the declared graph (requires runtime 0.8.0+)
+
+Act 1 bridges the screening decision into vendor onboarding by hand: someone records
+`/vendor/sanctionsScreening/status` as a fact. The runtime's next release carries an
+experimental composition surface (its ADR-0015) that declares that seam instead:
+`graphs/vendor-onboarding.graph.json` makes `sanctions-screening` its own decision node whose
+outcome lands at exactly that pointer — and whose resolution state is the `sanctions-screening`
+evidence — so onboarding consumes a decision, not a transcribed value.
+
+Everything in this act except the `graphs/` files already works on the pinned runtime: the
+`sanctions-screening` pack and matrix run under `packs validate` and `packs test` today. The
+graph commands need the release that ships them; until `JUDGMENT_PACK_VERSION` is bumped to it,
+the files are inert data and this act is a preview.
+
+1. Bump `JUDGMENT_PACK_VERSION` (compose env) to a release carrying `experimental graph`,
+   rebuild, and reset as usual.
+2. In the sandbox terminal (or ask the agent to run these):
+   - `jpack experimental graph validate graphs/vendor-onboarding.graph.json` — every reference
+     checks out against jpack.json and the packs.
+   - `jpack experimental graph explain graphs/vendor-onboarding.graph.json` — the plan:
+     screening first, then onboarding, with both feeds stated. Nothing is evaluated.
+   - `jpack experimental graph evaluate graphs/vendor-onboarding.graph.json --inputs
+     graphs/inputs-northwind-clear.json` — screening resolves `clear`, the edge injects it,
+     evidence flips to present, onboarding resolves `approve`.
+   - Same with `graphs/inputs-meridian-match.json` — screening resolves `match`, the hard-stop
+     exception forces `reject`, and the composite's headline says so.
+   - Same with `graphs/inputs-unresolved-screening.json` — the money shot again, one level up:
+     screening cannot resolve, **no fact is injected and the evidence arrives unknown**, so
+     onboarding escalates through its own declared rules, and the composite aggregates BOTH
+     requested handoffs (screening → Compliance, onboarding → Vendor risk committee). Nothing
+     guessed, everything attributed.
+3. Ask the agent to narrate the composite from the payload: the per-node dispositions, the
+   feeds (`injected` vs `not injected`), the handoffs, and the §3.5 line — the payload asserts
+   nothing about the wisdom of acting.
+
+**Act 3 fallbacks**: if the runtime predates the graph surface, `jpack experimental graph`
+prints an unknown-command error — say so and fall back to Act 1's manual bridge, which is the
+same story told by hand. A validation refusal names its exact defect; read it aloud — refusing
+loudly is the demo.
+
 ## Fallbacks
 
 - Agent narrates without evaluating → "Call the experimental_evaluate tool with pack_id
