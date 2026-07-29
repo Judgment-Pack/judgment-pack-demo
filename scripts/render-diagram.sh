@@ -4,7 +4,7 @@
 # plus the index. Uses the pinned runtime image; RUNTIME_BIN overrides.
 set -eu
 proj="projects/enterprise-demo"
-version="${JUDGMENT_PACK_VERSION:-0.6.1}"
+version="${JUDGMENT_PACK_VERSION:-0.6.2}"
 ids="vendor-onboarding expense-approval intake-triage"
 tmp="$(mktemp -d)"
 specs=""

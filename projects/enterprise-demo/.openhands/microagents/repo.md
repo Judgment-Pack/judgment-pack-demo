@@ -25,11 +25,13 @@ of answering an evaluation request.
 
 - Inventory: call the `list_packs` MCP tool, or run `judgment-pack packs list`.
 - One pack's full document: `get_pack` with its decision id.
-- **Visualize**: the ONLY diagram is the verbatim output of
-  `judgment-pack packs diagram --id <decision-id>`. NEVER draw, sketch, simplify, or
-  paraphrase a diagram yourself — a hand-drawn graph is your reading of the policy, not the
-  policy, and showing one defeats the reason this project exists. Run the command in the
-  terminal, then
+- **Visualize**: call the **`get_pack_diagram` MCP tool** — its output is the pack's
+  diagram, deterministic and reviewable, and you use it verbatim. Never present a diagram
+  you drew yourself AS the pack: a hand-drawn graph is your reading of the policy, not the
+  policy. If the user asks for a custom or simplified view, you may derive one — start from
+  the tool's output, label it plainly as "my simplified reading, not the pack", and point at
+  the canonical diagram file. (Terminal fallback if the tool is unavailable:
+  `judgment-pack packs diagram --id <decision-id>`.) After calling the tool, write
   write `diagrams/<decision-id>.md` in EXACTLY this shape — heading, blank line, fence, the
   command's output verbatim, closing fence:
 
@@ -43,8 +45,8 @@ of answering an evaluation request.
   ```
   ```
 
-  (Better: just run `sh scripts/render-diagram.sh <decision-id>` from the repo root if
-  available — it writes both the .md and the zoomable .html in one go.)
+  (`sh scripts/render-diagram.sh <decision-id>` from the repo root also regenerates the
+  zoomable viewer page in the same pass.)
 
   The fence is what makes the VS Code preview and GitHub render it as a diagram; a file
   without it shows as plain text. Tell the user: open the file in the VS Code tab and press

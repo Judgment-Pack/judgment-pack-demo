@@ -1,8 +1,3 @@
-# vendor-onboarding — pack diagram
-
-**Zoomable viewer:** http://localhost:8002/enterprise-demo/diagrams/vendor-onboarding.html (layer toggles, zoom, pan)
-
-```mermaid
 ---
 title: "https://example.invalid/judgment-packs/vendor-onboarding 0.1.0"
 ---
@@ -49,4 +44,3 @@ flowchart TD
   applicability ~~~ evidence
   evidence ~~~ exceptions
   exceptions ~~~ rules
-```
