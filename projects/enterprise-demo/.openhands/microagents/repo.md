@@ -38,19 +38,14 @@ of answering an evaluation request.
   ```
   # <decision-id> — pack diagram
 
-  **[Open the zoomable viewer](http://localhost:8002/enterprise-demo/diagrams/<decision-id>.html)** — scroll to zoom, drag to pan.
-
   ```mermaid
-  <the command's output>
+  <the tool's output>
   ```
   ```
 
-  (`sh scripts/render-diagram.sh <decision-id>` from the repo root also regenerates the
-  zoomable viewer page in the same pass.)
-
-  The fence is what makes the VS Code preview and GitHub render it as a diagram; a file
-  without it shows as plain text. Tell the user: open the file in the VS Code tab and press
-  Ctrl+Shift+V. Also paste the fenced diagram into your chat reply. Node meanings: member nodes quote the pack; `unresolved (unknown)` /
+  The fence is what makes GitHub render the file as a diagram; a file without it shows as
+  plain text. Paste the fenced diagram in your chat reply — clients that render mermaid draw
+  it inline, and in every client the text is the verbatim artifact. Node meanings: member nodes quote the pack; `unresolved (unknown)` /
   `not-applicable` / `no rule fired` are resolution states; `reads` edges are evidence a
   condition actually tests, `cites` edges are citations.
 
@@ -105,8 +100,15 @@ When the user asks to encode a policy as a new pack, work this loop:
 5. **Test**: write a small instance matrix (`packs/<decision-id>.matrix.json`) — one row per
    outcome plus an unknown probe — register it, and run `judgment-pack packs test`. Byte-exact
    expectations: run one evaluation first if unsure of the exact disposition bytes.
+   **When a row mismatches, the policy text is the arbiter**: decide whether the pack or the
+   row is wrong before touching either, and never weaken the pack — a required flag, a gate,
+   a rule — just to make your own expectation pass. Two facts that prevent misdiagnoses:
+   `evidenceRequirementRefs` is a citation the evaluator never reads (removing it changes
+   nothing), and a `missing-required-evidence` reason means the ROW's evidenceAvailability
+   omitted required evidence, not that the pack is broken.
 6. **Show it**: run `sh scripts/render-diagram.sh` from the repo root (regenerates every
-   pack's viewer page and the index), then tell the user the new pack is in the viewer.
+   pack's `diagrams/<id>.md`), paste the new pack's fenced diagram in your reply, and note
+   the file renders as a flowchart on GitHub.
 
 The pack you produce is the user's, and only validation decides conformance — say so.
 

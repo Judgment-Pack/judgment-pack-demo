@@ -51,12 +51,7 @@ judgment-pack experimental evaluate packs/data-request-intake-triage.pack.json \
 # Delete a load-bearing fact and re-run — it ESCALATES instead of guessing:
 jq 'del(.request.completeness)' full-facts.json > partial-facts.json
 judgment-pack experimental evaluate packs/data-request-intake-triage.pack.json \
-  --facts partial-facts.json --evidence evidence.json
-# → disposition: unresolved (unknown), handoff requested to "Intake reviewer",
-#   trace showing each rule that went unknown and escalated
-```
-
-Same inputs, same bytes, on any machine — that's the conformance claim doing its job. The
+  --facts partial-facts.json --evidence evidence.The
 `trace` in every payload is the pack-grounded reasoning: which exception and rule evaluated to
 what, which unknowns were escalating, which were ignored.
 

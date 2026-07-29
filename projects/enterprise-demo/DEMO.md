@@ -7,18 +7,17 @@ Stack: OpenHands (agent-canvas) at `localhost:8000/canvas`, this project open, t
 `judgment-pack` MCP server pre-seeded against `enterprise-demo/jpack.json`.
 **Model: `gemini-3.1-pro-preview`** — check the selector on every new chat; the lite models
 paraphrase instead of running tools (a rehearsal on flash-lite hand-drew its own diagram).
-The conversation's built-in **Files pane** (right side) is the browse surface; the viewer tab
-is the picture. Before the demo:
+The conversation's built-in **Files pane** (right side) is the browse surface. Before the demo:
 `docker compose up -d`, then:
 
-1. **Window 1 — chat**: `localhost:8000/canvas` → New Chat **with the enterprise-demo
+1. **One window — chat**: `localhost:8000/canvas` → New Chat **with the enterprise-demo
    project selected**, so the right-hand **Files pane** shows `packs/`, `requests/`,
-   `evidence/`, `diagrams/` — that pane is the file-browsing surface (no VS Code).
-2. **Window 2 — the pack viewer**: `http://localhost:8002/enterprise-demo/diagrams/` →
-   `vendor-onboarding`, leave it on **Core flow**. Layer toggles, Top-down/Left-right,
-   zoom, pan.
-   *One-window option*: the chat's right panel has a globe (browser) icon — if it accepts
-   a URL, point it at the viewer and skip Window 2 entirely.
+   `evidence/`, `diagrams/` — that pane is the file-browsing surface.
+2. *Optional drawn picture*: the committed `diagrams/*.md` render as flowcharts **on
+   GitHub** — keep `github.com/Judgment-Pack/judgment-pack-demo` →
+   `projects/enterprise-demo/diagrams/vendor-onboarding.md` in a background tab.
+3. Run `./scripts/reset-demo.sh` (clears rehearsal leftovers — Act 2 must start with
+   three packs, not four).
 
 ## 0. Frame (30s, no typing)
 
@@ -39,13 +38,13 @@ suite (14 rows, byte-exact).
 > **Prompt:** Show me the vendor-onboarding pack as a diagram.
 
 Expect: the agent calls the **`get_pack_diagram` tool** (deterministic output, used
-verbatim) and writes `diagrams/vendor-onboarding.md`. Then **switch to the viewer tab** — that is the picture.
-Start on **Core flow** (clean: applicability → exceptions → rules → outcomes → escalation,
-top-to-bottom in the pack's own evaluation order), click **+ Evidence** to reveal what the
-conditions actually read versus merely cite, then **Full** for the unknown-paths. Walk it:
-sanctions hard-stop exception, the committee spend threshold, the `reads` edges into the
-screening evidence. "This diagram is generated from the pack, deterministically — it cannot
-drift from what was reviewed."
+verbatim), pastes the fenced source in chat, and writes `diagrams/vendor-onboarding.md`.
+The chat shows the *source* — own that: *"this is the generated artifact, byte-stable;
+GitHub and any mermaid-capable client draw it as a flowchart."* For the drawn picture, the
+GitHub tab from prep renders it. Walk the structure top-to-bottom in the pack's own
+evaluation order: sanctions hard-stop exception, the committee spend threshold, the `reads`
+edges into the screening evidence. "This diagram is generated from the pack,
+deterministically — it cannot drift from what was reviewed."
 
 ## 3. The clean approval (60s)
 
@@ -112,8 +111,8 @@ Expect, in order (nudge with the step name if the agent stalls):
 3. Registration: the file lands in `packs/` (watch the Files pane), `jpack.json` grows an
    entry, `packs validate` passes in the terminal.
 4. A small matrix + `packs test` — the new pack has a regression suite minutes after birth.
-5. `sh scripts/render-diagram.sh` — then **refresh the viewer index**: the new pack is in
-   the portfolio, diagrammed, zoomable. Close: *"policy to reviewed artifact, minutes, and
+5. `sh scripts/render-diagram.sh` — the new pack's diagram file joins the portfolio in
+   `diagrams/` (watch the Files pane). Close: *"policy to reviewed artifact, minutes, and
    nothing in that pipeline trusted the model's judgment — only its labor."*
 
 **Act 2 fallbacks**: if the agent writes the file before validating, ask it to validate the
@@ -129,7 +128,8 @@ already the story.
 - Agent invents a screening status in step 5 → "Where is the screening record? Report what
   you cannot source as unknown." (The pack still protects you: a guessed `clear` is the one
   thing the honesty rule exists to prevent — restate it.)
-- Chat never renders mermaid (agent-canvas limitation) — the visual is the VS Code markdown
-  preview or the pre-built `diagrams/vendor-onboarding.html`; both work offline.
+- Chat never renders mermaid (agent-canvas limitation) — the fence is the verbatim
+  artifact; the committed `diagrams/*.md` render as flowcharts on GitHub when a drawn
+  picture is wanted.
 - Model/API hiccup → `packs test` in the terminal shows the 14-row byte-exact suite as the
   determinism proof without any model.

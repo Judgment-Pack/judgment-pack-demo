@@ -1,33 +1,27 @@
 #!/bin/sh
-# Regenerate every pack's diagram: diagrams/<id>.md (fenced mermaid with a
-# viewer link) and the standalone viewer pages (layer toggles, zoom, pan)
-# plus the index. Uses the pinned runtime image; RUNTIME_BIN overrides.
+# Regenerate every pack's diagrams/<id>.md: the deterministic Mermaid source
+# in a fenced block. GitHub renders the fence as a diagram; mermaid-capable
+# chat clients draw it inline. Uses the pinned runtime image; RUNTIME_BIN
+# overrides with a local binary.
 set -eu
 proj="projects/enterprise-demo"
 version="${JUDGMENT_PACK_VERSION:-0.6.2}"
-# Every pack the project declares, so a newly authored pack gets its viewer
-# page and index entry in the same pass.
 ids="$(python3 -c "import json; print(' '.join(sorted(json.load(open('$proj/jpack.json'))['packs'])))")"
-tmp="$(mktemp -d)"
-specs=""
 for id in $ids; do
   if [ -n "${RUNTIME_BIN:-}" ]; then
-    (cd "$proj" && "$RUNTIME_BIN" packs diagram --id "$id") > "$tmp/$id.mmd"
+    mmd="$( (cd "$proj" && "$RUNTIME_BIN" packs diagram --id "$id") )"
   else
-    docker run --rm -v "$PWD/$proj":/project:ro "ghcr.io/judgment-pack/judgment-pack:$version" \
-      packs diagram --id "$id" > "$tmp/$id.mmd"
+    mmd="$(docker run --rm -v "$PWD/$proj":/project:ro "ghcr.io/judgment-pack/judgment-pack:$version" packs diagram --id "$id")"
   fi
   {
     echo "# $id — pack diagram"
     echo
-    echo "**Zoomable viewer:** http://localhost:8002/enterprise-demo/diagrams/$id.html (layer toggles, zoom, pan)"
+    echo "Deterministic rendering of the reviewed pack (\`judgment-pack packs diagram\`)."
+    echo "GitHub draws the fence below as a flowchart."
     echo
     echo '```mermaid'
-    cat "$tmp/$id.mmd"
+    echo "$mmd"
     echo '```'
   } > "$proj/diagrams/$id.md"
-  specs="$specs $id=$tmp/$id.mmd"
+  echo "rendered $proj/diagrams/$id.md"
 done
-# shellcheck disable=SC2086
-python3 scripts/build-viewer.py "$proj" $specs
-rm -rf "$tmp"

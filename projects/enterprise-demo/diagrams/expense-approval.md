@@ -1,6 +1,7 @@
 # expense-approval — pack diagram
 
-**Zoomable viewer:** http://localhost:8002/enterprise-demo/diagrams/expense-approval.html (layer toggles, zoom, pan)
+Deterministic rendering of the reviewed pack (`judgment-pack packs diagram`).
+GitHub draws the fence below as a flowchart.
 
 ```mermaid
 ---
