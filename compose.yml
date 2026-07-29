@@ -17,3 +17,17 @@ services:
       - ./state:/home/openhands/.openhands
     stdin_open: true
     tty: true
+
+  # Oneshot: registers the judgment-pack MCP server in agent-canvas settings on
+  # first boot (agent-canvas stores MCP config in its settings API, not a file).
+  mcp-seed:
+    image: curlimages/curl:8.14.1
+    # Same identity as the app user: the api key file it must read is mode 600.
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    depends_on:
+      - openhands
+    volumes:
+      - ./state:/state:ro
+      - ./scripts:/scripts:ro
+    entrypoint: ["/bin/sh", "/scripts/seed-mcp.sh"]
+    restart: "no"
