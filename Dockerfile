@@ -7,7 +7,7 @@
 #     --repo Judgment-Pack/judgment-pack-runtime
 
 ARG AGENT_CANVAS_VERSION=1.6.1
-ARG JUDGMENT_PACK_VERSION=0.6.1
+ARG JUDGMENT_PACK_VERSION=0.6.2
 
 FROM ghcr.io/judgment-pack/judgment-pack:${JUDGMENT_PACK_VERSION} AS runtime
 
@@ -32,11 +32,3 @@ COPY --from=runtime --chmod=755 /judgment-pack /usr/local/bin/judgment-pack
 COPY --from=runtime --chmod=755 /judgment-pack /usr/local/bin/jpack
 USER openhands
 
-# The chat panel renders no mermaid; the embedded VS Code does once this
-# extension (from open-vsx) is present. Diagrams open as real diagrams:
-# file tree -> diagrams/<id>.md -> markdown preview.
-# --extensions-dir must be the SERVER's dir: the CLI defaults to the user
-# home, which the running server never reads (its launcher pins this path).
-RUN /openhands/.openvscode-server/bin/openvscode-server \
-      --extensions-dir /openhands/.openvscode-server/extensions \
-      --install-extension bierner.markdown-mermaid

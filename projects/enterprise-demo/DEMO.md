@@ -9,15 +9,16 @@ Stack: OpenHands (agent-canvas) at `localhost:8000/canvas`, this project open, t
 paraphrase instead of running tools (a rehearsal on flash-lite hand-drew its own diagram).
 The conversation's built-in **Files pane** (right side) is the browse surface; the viewer tab
 is the picture. Before the demo:
-`docker compose up -d`, then open TWO browser tabs:
+`docker compose up -d`, then:
 
-1. the chat: `localhost:8000/canvas`
-2. **the pack viewer: `http://localhost:8002/enterprise-demo/diagrams/`** — the index lists
-   every pack; open `vendor-onboarding` and leave it on **Core flow**. This tab is the
-   visualization surface: layer toggles (Core flow / + Evidence / Full), Top-down or
-   Left-right, scroll to zoom, drag to pan.
-3. optional: the embedded VS Code (`./scripts/vscode-url.sh`) for the file-tree beat —
-   browsing `packs/`, `requests/`, `evidence/` as real files.
+1. **Window 1 — chat**: `localhost:8000/canvas` → New Chat **with the enterprise-demo
+   project selected**, so the right-hand **Files pane** shows `packs/`, `requests/`,
+   `evidence/`, `diagrams/` — that pane is the file-browsing surface (no VS Code).
+2. **Window 2 — the pack viewer**: `http://localhost:8002/enterprise-demo/diagrams/` →
+   `vendor-onboarding`, leave it on **Core flow**. Layer toggles, Top-down/Left-right,
+   zoom, pan.
+   *One-window option*: the chat's right panel has a globe (browser) icon — if it accepts
+   a URL, point it at the viewer and skip Window 2 entirely.
 
 ## 0. Frame (30s, no typing)
 
@@ -37,8 +38,8 @@ suite (14 rows, byte-exact).
 
 > **Prompt:** Show me the vendor-onboarding pack as a diagram.
 
-Expect: the agent runs `judgment-pack packs diagram --id vendor-onboarding` and writes
-`diagrams/vendor-onboarding.md`. Then **switch to the viewer tab** — that is the picture.
+Expect: the agent calls the **`get_pack_diagram` tool** (deterministic output, used
+verbatim) and writes `diagrams/vendor-onboarding.md`. Then **switch to the viewer tab** — that is the picture.
 Start on **Core flow** (clean: applicability → exceptions → rules → outcomes → escalation,
 top-to-bottom in the pack's own evaluation order), click **+ Evidence** to reveal what the
 conditions actually read versus merely cite, then **Full** for the unknown-paths. Walk it:
