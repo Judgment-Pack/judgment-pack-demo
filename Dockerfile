@@ -6,7 +6,7 @@
 ARG AGENT_CANVAS_VERSION=1.6.1
 
 FROM alpine:3.20 AS fetch
-ARG JUDGMENT_PACK_VERSION=0.4.0
+ARG JUDGMENT_PACK_VERSION=0.5.0
 ARG TARGETARCH=amd64
 RUN mkdir -p /out \
  && wget -qO /tmp/jp.tar.gz "https://github.com/Judgment-Pack/judgment-pack-runtime/releases/download/v${JUDGMENT_PACK_VERSION}/judgment-pack_${JUDGMENT_PACK_VERSION}_linux_${TARGETARCH}.tar.gz" \
