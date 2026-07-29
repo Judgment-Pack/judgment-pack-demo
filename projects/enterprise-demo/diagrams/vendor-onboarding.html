@@ -6,76 +6,42 @@
 <script src="mermaid.min.js"></script>
 <style>
   html,body{margin:0;height:100%;font-family:system-ui,sans-serif;background:#fafafa;color:#1a1a1a}
-  header{display:flex;align-items:center;gap:.75rem;padding:.5rem 1rem;border-bottom:1px solid #ddd;background:#fff}
-  header h1{font-size:1rem;margin:0;font-weight:600}
-  header .hint{color:#777;font-size:.85rem;margin-left:auto}
-  button{font:inherit;padding:.25rem .7rem;border:1px solid #ccc;border-radius:6px;background:#fff;cursor:pointer}
-  button:hover{background:#f0f0f0}
-  #viewport{position:relative;overflow:hidden;height:calc(100% - 49px);cursor:grab}
+  header{display:flex;align-items:center;gap:.6rem;padding:.5rem 1rem;border-bottom:1px solid #ddd;background:#fff;flex-wrap:wrap}
+  header h1{font-size:1rem;margin:0 .5rem 0 0;font-weight:600}
+  header a{color:#3355bb;text-decoration:none;font-size:.9rem}
+  .seg{display:flex;border:1px solid #ccc;border-radius:6px;overflow:hidden}
+  .seg button{border:0;border-right:1px solid #ccc;background:#fff;padding:.3rem .8rem;font:inherit;cursor:pointer}
+  .seg button:last-child{border-right:0}
+  .seg button.on{background:#e8edfb;font-weight:600}
+  button.plain{font:inherit;padding:.3rem .8rem;border:1px solid #ccc;border-radius:6px;background:#fff;cursor:pointer}
+  .hint{color:#777;font-size:.82rem;margin-left:auto}
+  #viewport{position:relative;overflow:hidden;height:calc(100% - 53px);cursor:grab}
   #viewport.dragging{cursor:grabbing}
   #canvas{position:absolute;transform-origin:0 0}
-  #canvas svg{display:block}
 </style>
 </head>
 <body>
 <header>
+  <a href="index.html">&larr; packs</a>
   <h1>vendor-onboarding</h1>
-  <button id="zin">+</button><button id="zout">&minus;</button>
-  <button id="fit">Fit</button><button id="reset">100%</button>
-  <span class="hint">scroll to zoom &middot; drag to pan &middot; double-click to fit &middot; rendered by <code>judgment-pack packs diagram</code></span>
+  <div class="seg" id="layers">
+    <button data-l="core" class="on">Core flow</button>
+    <button data-l="evidence">+ Evidence</button>
+    <button data-l="full">Full</button>
+  </div>
+  <div class="seg" id="dir">
+    <button data-d="TD" class="on">Top-down</button>
+    <button data-d="LR">Left-right</button>
+  </div>
+  <button class="plain" id="fit">Fit</button>
+  <span class="hint">scroll to zoom &middot; drag to pan &middot; double-click to fit &middot; deterministic render of the reviewed pack</span>
 </header>
-<div id="viewport"><div id="canvas"><pre class="mermaid">
----
-title: "https://example.invalid/judgment-packs/vendor-onboarding 0.1.0"
----
-flowchart TD
-  applicability{"applicability: /request/type in [#quot;new-vendor-onboarding#quot;,#quot;vendor…"}
-  applicability -. "false" .-> not_applicable
-  applicability -. "unknown" .-> unresolved_unknown
-  subgraph evidence["evidence requirements"]
-    ev_sanctions_screening["sanctions-screening (required, attestation)"]
-    ev_tax_form["tax-form (required, document)"]
-    ev_business_justification["business-justification (optional, document)"]
-  end
-  subgraph exceptions
-    exc_sanctions_match_hard_stop{{"sanctions-match-hard-stop<br/>when /vendor/sanctionsScreening/status equals #quot;match#quot;"}}
-    exc_committee_review_threshold{{"committee-review-threshold<br/>when /engagement/annualSpendUsd greater-than-or-equal #quot;250000…"}}
-  end
-  exc_sanctions_match_hard_stop == "force-outcome" ==> out_reject
-  exc_sanctions_match_hard_stop -. "unknown" .-> unresolved_unknown
-  exc_committee_review_threshold == "escalate" ==> escalation
-  exc_committee_review_threshold -. "unknown" .-> unresolved_unknown
-  subgraph rules
-    rule_request_info_incomplete["request-info-incomplete<br/>when any(2)"]
-    rule_approve_standard["approve-standard<br/>when all(6)"]
-  end
-  rule_request_info_incomplete --> out_request_info
-  rule_request_info_incomplete -. "unknown" .-> unresolved_unknown
-  rule_request_info_incomplete -. "cites" .-> ev_tax_form
-  rule_approve_standard --> out_approve
-  rule_approve_standard -. "unknown" .-> unresolved_unknown
-  ev_sanctions_screening -. "reads" .-> rule_approve_standard
-  ev_tax_form -. "reads" .-> rule_approve_standard
-  rule_approve_standard -. "cites" .-> ev_sanctions_screening
-  rule_approve_standard -. "cites" .-> ev_tax_form
-  out_approve(["Approve onboarding"])
-  out_request_info(["Request more information"])
-  out_reject(["Reject"])
-  no_rule_fired["no rule fired"]
-  no_rule_fired -. "fallbackOutcome" .-> out_request_info
-  unresolved_unknown(["unresolved (unknown)"])
-  not_applicable(["not-applicable"])
-  escalation[/"escalation → human-role: Vendor risk committee"/]
-  escalation_triggers["triggers: not-applicable, missing-required-evidence, unknown, conflict, no-match"]
-  escalation_triggers -.-> escalation
-  applicability ~~~ evidence
-  evidence ~~~ exceptions
-  exceptions ~~~ rules
-</pre></div></div>
+<div id="viewport"><div id="canvas"></div></div>
 <script>
+const SOURCES = {"core": "---\ntitle: \"https://example.invalid/judgment-packs/vendor-onboarding 0.1.0\"\n---\nflowchart TD\n  applicability{\"applicability: /request/type in [#quot;new-vendor-onboarding#quot;,#quot;vendor\u2026\"}\n  applicability -. \"false\" .-> not_applicable\n  subgraph exceptions\n    exc_sanctions_match_hard_stop{{\"sanctions-match-hard-stop<br/>when /vendor/sanctionsScreening/status equals #quot;match#quot;\"}}\n    exc_committee_review_threshold{{\"committee-review-threshold<br/>when /engagement/annualSpendUsd greater-than-or-equal #quot;250000\u2026\"}}\n  end\n  exc_sanctions_match_hard_stop == \"force-outcome\" ==> out_reject\n  exc_committee_review_threshold == \"escalate\" ==> escalation\n  subgraph rules\n    rule_request_info_incomplete[\"request-info-incomplete<br/>when any(2)\"]\n    rule_approve_standard[\"approve-standard<br/>when all(6)\"]\n  end\n  rule_request_info_incomplete --> out_request_info\n  rule_approve_standard --> out_approve\n  out_approve([\"Approve onboarding\"])\n  out_request_info([\"Request more information\"])\n  out_reject([\"Reject\"])\n  no_rule_fired[\"no rule fired\"]\n  no_rule_fired -. \"fallbackOutcome\" .-> out_request_info\n  not_applicable([\"not-applicable\"])\n  escalation[/\"escalation \u2192 human-role: Vendor risk committee\"/]\n  escalation_triggers[\"triggers: not-applicable, missing-required-evidence, unknown, conflict, no-match\"]\n  escalation_triggers -.-> escalation\n  applicability ~~~ exceptions\n  exceptions ~~~ rules\n", "evidence": "---\ntitle: \"https://example.invalid/judgment-packs/vendor-onboarding 0.1.0\"\n---\nflowchart TD\n  applicability{\"applicability: /request/type in [#quot;new-vendor-onboarding#quot;,#quot;vendor\u2026\"}\n  applicability -. \"false\" .-> not_applicable\n  subgraph exceptions\n    exc_sanctions_match_hard_stop{{\"sanctions-match-hard-stop<br/>when /vendor/sanctionsScreening/status equals #quot;match#quot;\"}}\n    exc_committee_review_threshold{{\"committee-review-threshold<br/>when /engagement/annualSpendUsd greater-than-or-equal #quot;250000\u2026\"}}\n  end\n  exc_sanctions_match_hard_stop == \"force-outcome\" ==> out_reject\n  exc_committee_review_threshold == \"escalate\" ==> escalation\n  subgraph rules\n    rule_request_info_incomplete[\"request-info-incomplete<br/>when any(2)\"]\n    rule_approve_standard[\"approve-standard<br/>when all(6)\"]\n  end\n  rule_request_info_incomplete --> out_request_info\n  rule_approve_standard --> out_approve\n  out_approve([\"Approve onboarding\"])\n  out_request_info([\"Request more information\"])\n  out_reject([\"Reject\"])\n  no_rule_fired[\"no rule fired\"]\n  no_rule_fired -. \"fallbackOutcome\" .-> out_request_info\n  not_applicable([\"not-applicable\"])\n  escalation[/\"escalation \u2192 human-role: Vendor risk committee\"/]\n  escalation_triggers[\"triggers: not-applicable, missing-required-evidence, unknown, conflict, no-match\"]\n  escalation_triggers -.-> escalation\n  applicability ~~~ exceptions\n  exceptions ~~~ rules\n\n  subgraph evidence[\"evidence requirements\"]\n    ev_sanctions_screening[\"sanctions-screening (required, attestation)\"]\n    ev_tax_form[\"tax-form (required, document)\"]\n    ev_business_justification[\"business-justification (optional, document)\"]\n  end\n  rule_request_info_incomplete -. \"cites\" .-> ev_tax_form\n  ev_sanctions_screening -. \"reads\" .-> rule_approve_standard\n  ev_tax_form -. \"reads\" .-> rule_approve_standard\n  rule_approve_standard -. \"cites\" .-> ev_sanctions_screening\n  rule_approve_standard -. \"cites\" .-> ev_tax_form\n  applicability ~~~ evidence\n  evidence ~~~ exceptions", "full": "---\ntitle: \"https://example.invalid/judgment-packs/vendor-onboarding 0.1.0\"\n---\nflowchart TD\n  applicability{\"applicability: /request/type in [#quot;new-vendor-onboarding#quot;,#quot;vendor\u2026\"}\n  applicability -. \"false\" .-> not_applicable\n  applicability -. \"unknown\" .-> unresolved_unknown\n  subgraph evidence[\"evidence requirements\"]\n    ev_sanctions_screening[\"sanctions-screening (required, attestation)\"]\n    ev_tax_form[\"tax-form (required, document)\"]\n    ev_business_justification[\"business-justification (optional, document)\"]\n  end\n  subgraph exceptions\n    exc_sanctions_match_hard_stop{{\"sanctions-match-hard-stop<br/>when /vendor/sanctionsScreening/status equals #quot;match#quot;\"}}\n    exc_committee_review_threshold{{\"committee-review-threshold<br/>when /engagement/annualSpendUsd greater-than-or-equal #quot;250000\u2026\"}}\n  end\n  exc_sanctions_match_hard_stop == \"force-outcome\" ==> out_reject\n  exc_sanctions_match_hard_stop -. \"unknown\" .-> unresolved_unknown\n  exc_committee_review_threshold == \"escalate\" ==> escalation\n  exc_committee_review_threshold -. \"unknown\" .-> unresolved_unknown\n  subgraph rules\n    rule_request_info_incomplete[\"request-info-incomplete<br/>when any(2)\"]\n    rule_approve_standard[\"approve-standard<br/>when all(6)\"]\n  end\n  rule_request_info_incomplete --> out_request_info\n  rule_request_info_incomplete -. \"unknown\" .-> unresolved_unknown\n  rule_request_info_incomplete -. \"cites\" .-> ev_tax_form\n  rule_approve_standard --> out_approve\n  rule_approve_standard -. \"unknown\" .-> unresolved_unknown\n  ev_sanctions_screening -. \"reads\" .-> rule_approve_standard\n  ev_tax_form -. \"reads\" .-> rule_approve_standard\n  rule_approve_standard -. \"cites\" .-> ev_sanctions_screening\n  rule_approve_standard -. \"cites\" .-> ev_tax_form\n  out_approve([\"Approve onboarding\"])\n  out_request_info([\"Request more information\"])\n  out_reject([\"Reject\"])\n  no_rule_fired[\"no rule fired\"]\n  no_rule_fired -. \"fallbackOutcome\" .-> out_request_info\n  unresolved_unknown([\"unresolved (unknown)\"])\n  not_applicable([\"not-applicable\"])\n  escalation[/\"escalation \u2192 human-role: Vendor risk committee\"/]\n  escalation_triggers[\"triggers: not-applicable, missing-required-evidence, unknown, conflict, no-match\"]\n  escalation_triggers -.-> escalation\n  applicability ~~~ evidence\n  evidence ~~~ exceptions\n  exceptions ~~~ rules\n"};
 mermaid.initialize({startOnLoad:false,theme:"neutral",flowchart:{useMaxWidth:false},themeVariables:{fontSize:"15px"}});
 const vp=document.getElementById("viewport"),cv=document.getElementById("canvas");
-let s=1,tx=0,ty=0;
+let s=1,tx=0,ty=0,layer="core",dir="TD",seq=0;
 function apply(){cv.style.transform=`translate(${tx}px,${ty}px) scale(${s})`;}
 function fit(){
   const svg=cv.querySelector("svg"); if(!svg) return;
@@ -83,11 +49,27 @@ function fit(){
   s=Math.min(vp.clientWidth/w, vp.clientHeight/h)*0.95;
   tx=(vp.clientWidth-w*s)/2; ty=(vp.clientHeight-h*s)/2; apply();
 }
-mermaid.run({querySelector:".mermaid"}).then(fit);
+async function render(){
+  const src=SOURCES[layer].replace("flowchart TD","flowchart "+dir);
+  const {svg}=await mermaid.render("d"+(seq++), src);
+  cv.innerHTML=svg; fit();
+}
+document.getElementById("layers").addEventListener("click",e=>{
+  if(!e.target.dataset.l) return;
+  layer=e.target.dataset.l;
+  for(const b of e.target.parentNode.children) b.classList.toggle("on",b===e.target);
+  render();
+});
+document.getElementById("dir").addEventListener("click",e=>{
+  if(!e.target.dataset.d) return;
+  dir=e.target.dataset.d;
+  for(const b of e.target.parentNode.children) b.classList.toggle("on",b===e.target);
+  render();
+});
 vp.addEventListener("wheel",e=>{
   e.preventDefault();
   const k=e.deltaY<0?1.15:1/1.15, r=vp.getBoundingClientRect();
-  const mx=e.clientX-r.left, my=e.clientY-r.top;
+  const mx=e.clientX-r.left,my=e.clientY-r.top;
   tx=mx-(mx-tx)*k; ty=my-(my-ty)*k; s*=k; apply();
 },{passive:false});
 let drag=null;
@@ -95,10 +77,8 @@ vp.addEventListener("mousedown",e=>{drag={x:e.clientX-tx,y:e.clientY-ty};vp.clas
 window.addEventListener("mousemove",e=>{if(drag){tx=e.clientX-drag.x;ty=e.clientY-drag.y;apply();}});
 window.addEventListener("mouseup",()=>{drag=null;vp.classList.remove("dragging");});
 vp.addEventListener("dblclick",fit);
-document.getElementById("zin").onclick=()=>{s*=1.25;apply();};
-document.getElementById("zout").onclick=()=>{s/=1.25;apply();};
 document.getElementById("fit").onclick=fit;
-document.getElementById("reset").onclick=()=>{s=1;tx=20;ty=20;apply();};
+render();
 </script>
 </body>
 </html>

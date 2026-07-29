@@ -1,0 +1,84 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>intake-triage — pack diagram</title>
+<script src="mermaid.min.js"></script>
+<style>
+  html,body{margin:0;height:100%;font-family:system-ui,sans-serif;background:#fafafa;color:#1a1a1a}
+  header{display:flex;align-items:center;gap:.6rem;padding:.5rem 1rem;border-bottom:1px solid #ddd;background:#fff;flex-wrap:wrap}
+  header h1{font-size:1rem;margin:0 .5rem 0 0;font-weight:600}
+  header a{color:#3355bb;text-decoration:none;font-size:.9rem}
+  .seg{display:flex;border:1px solid #ccc;border-radius:6px;overflow:hidden}
+  .seg button{border:0;border-right:1px solid #ccc;background:#fff;padding:.3rem .8rem;font:inherit;cursor:pointer}
+  .seg button:last-child{border-right:0}
+  .seg button.on{background:#e8edfb;font-weight:600}
+  button.plain{font:inherit;padding:.3rem .8rem;border:1px solid #ccc;border-radius:6px;background:#fff;cursor:pointer}
+  .hint{color:#777;font-size:.82rem;margin-left:auto}
+  #viewport{position:relative;overflow:hidden;height:calc(100% - 53px);cursor:grab}
+  #viewport.dragging{cursor:grabbing}
+  #canvas{position:absolute;transform-origin:0 0}
+</style>
+</head>
+<body>
+<header>
+  <a href="index.html">&larr; packs</a>
+  <h1>intake-triage</h1>
+  <div class="seg" id="layers">
+    <button data-l="core" class="on">Core flow</button>
+    <button data-l="evidence">+ Evidence</button>
+    <button data-l="full">Full</button>
+  </div>
+  <div class="seg" id="dir">
+    <button data-d="TD" class="on">Top-down</button>
+    <button data-d="LR">Left-right</button>
+  </div>
+  <button class="plain" id="fit">Fit</button>
+  <span class="hint">scroll to zoom &middot; drag to pan &middot; double-click to fit &middot; deterministic render of the reviewed pack</span>
+</header>
+<div id="viewport"><div id="canvas"></div></div>
+<script>
+const SOURCES = {"core": "---\ntitle: \"https://example.invalid/judgment-packs/data-request-intake-triage 0.1.0\"\n---\nflowchart TD\n  applicability{\"applicability: /request/type in [#quot;new-data-pipeline#quot;,#quot;pipeline-c\u2026\"}\n  applicability -. \"false\" .-> not_applicable\n  subgraph exceptions\n    exc_embargoed_information_to_unauthorized{{\"embargoed-information-to-unauthorized<br/>when /request/embargoedInformationToUnauthorizedRe\u2026\"}}\n  end\n  exc_embargoed_information_to_unauthorized == \"force-outcome\" ==> out_decline_redirect\n  subgraph rules\n    rule_decline_hard_appropriateness_failure[\"decline-hard-appropriateness-failure<br/>when /request/appropriateness equals #quot;hard-fail#quot;\"]\n    rule_clarify_incomplete_or_not_evaluable[\"clarify-incomplete-or-not-evaluable<br/>when any(2)\"]\n    rule_proceed_complete_and_appropriate[\"proceed-complete-and-appropriate<br/>when all(4)\"]\n  end\n  rule_decline_hard_appropriateness_failure --> out_decline_redirect\n  rule_clarify_incomplete_or_not_evaluable --> out_clarify_return\n  rule_proceed_complete_and_appropriate --> out_proceed\n  out_proceed([\"Proceed\"])\n  out_clarify_return([\"Clarify / return\"])\n  out_decline_redirect([\"Decline / redirect\"])\n  no_rule_fired[\"no rule fired\"]\n  no_rule_fired -. \"fallbackOutcome\" .-> out_clarify_return\n  not_applicable([\"not-applicable\"])\n  escalation[/\"escalation \u2192 human-role: Intake reviewer\"/]\n  escalation_triggers[\"triggers: not-applicable, missing-required-evidence, unknown, conflict, no-match\"]\n  escalation_triggers -.-> escalation\n  applicability ~~~ exceptions\n  exceptions ~~~ rules\n", "evidence": "---\ntitle: \"https://example.invalid/judgment-packs/data-request-intake-triage 0.1.0\"\n---\nflowchart TD\n  applicability{\"applicability: /request/type in [#quot;new-data-pipeline#quot;,#quot;pipeline-c\u2026\"}\n  applicability -. \"false\" .-> not_applicable\n  subgraph exceptions\n    exc_embargoed_information_to_unauthorized{{\"embargoed-information-to-unauthorized<br/>when /request/embargoedInformationToUnauthorizedRe\u2026\"}}\n  end\n  exc_embargoed_information_to_unauthorized == \"force-outcome\" ==> out_decline_redirect\n  subgraph rules\n    rule_decline_hard_appropriateness_failure[\"decline-hard-appropriateness-failure<br/>when /request/appropriateness equals #quot;hard-fail#quot;\"]\n    rule_clarify_incomplete_or_not_evaluable[\"clarify-incomplete-or-not-evaluable<br/>when any(2)\"]\n    rule_proceed_complete_and_appropriate[\"proceed-complete-and-appropriate<br/>when all(4)\"]\n  end\n  rule_decline_hard_appropriateness_failure --> out_decline_redirect\n  rule_clarify_incomplete_or_not_evaluable --> out_clarify_return\n  rule_proceed_complete_and_appropriate --> out_proceed\n  out_proceed([\"Proceed\"])\n  out_clarify_return([\"Clarify / return\"])\n  out_decline_redirect([\"Decline / redirect\"])\n  no_rule_fired[\"no rule fired\"]\n  no_rule_fired -. \"fallbackOutcome\" .-> out_clarify_return\n  not_applicable([\"not-applicable\"])\n  escalation[/\"escalation \u2192 human-role: Intake reviewer\"/]\n  escalation_triggers[\"triggers: not-applicable, missing-required-evidence, unknown, conflict, no-match\"]\n  escalation_triggers -.-> escalation\n  applicability ~~~ exceptions\n  exceptions ~~~ rules\n\n  subgraph evidence[\"evidence requirements\"]\n    ev_intake_form[\"intake-form (required, document)\"]\n    ev_sponsor_endorsement[\"sponsor-endorsement (required, attestation)\"]\n    ev_sensitive_data_approvals[\"sensitive-data-approvals (optional, attestation)\"]\n  end\n  rule_decline_hard_appropriateness_failure -. \"cites\" .-> ev_intake_form\n  rule_clarify_incomplete_or_not_evaluable -. \"cites\" .-> ev_intake_form\n  ev_intake_form -. \"reads\" .-> rule_proceed_complete_and_appropriate\n  ev_sponsor_endorsement -. \"reads\" .-> rule_proceed_complete_and_appropriate\n  rule_proceed_complete_and_appropriate -. \"cites\" .-> ev_intake_form\n  rule_proceed_complete_and_appropriate -. \"cites\" .-> ev_sponsor_endorsement\n  applicability ~~~ evidence\n  evidence ~~~ exceptions", "full": "---\ntitle: \"https://example.invalid/judgment-packs/data-request-intake-triage 0.1.0\"\n---\nflowchart TD\n  applicability{\"applicability: /request/type in [#quot;new-data-pipeline#quot;,#quot;pipeline-c\u2026\"}\n  applicability -. \"false\" .-> not_applicable\n  applicability -. \"unknown\" .-> unresolved_unknown\n  subgraph evidence[\"evidence requirements\"]\n    ev_intake_form[\"intake-form (required, document)\"]\n    ev_sponsor_endorsement[\"sponsor-endorsement (required, attestation)\"]\n    ev_sensitive_data_approvals[\"sensitive-data-approvals (optional, attestation)\"]\n  end\n  subgraph exceptions\n    exc_embargoed_information_to_unauthorized{{\"embargoed-information-to-unauthorized<br/>when /request/embargoedInformationToUnauthorizedRe\u2026\"}}\n  end\n  exc_embargoed_information_to_unauthorized == \"force-outcome\" ==> out_decline_redirect\n  exc_embargoed_information_to_unauthorized -. \"unknown\" .-> unresolved_unknown\n  subgraph rules\n    rule_decline_hard_appropriateness_failure[\"decline-hard-appropriateness-failure<br/>when /request/appropriateness equals #quot;hard-fail#quot;\"]\n    rule_clarify_incomplete_or_not_evaluable[\"clarify-incomplete-or-not-evaluable<br/>when any(2)\"]\n    rule_proceed_complete_and_appropriate[\"proceed-complete-and-appropriate<br/>when all(4)\"]\n  end\n  rule_decline_hard_appropriateness_failure --> out_decline_redirect\n  rule_decline_hard_appropriateness_failure -. \"unknown\" .-> unresolved_unknown\n  rule_decline_hard_appropriateness_failure -. \"cites\" .-> ev_intake_form\n  rule_clarify_incomplete_or_not_evaluable --> out_clarify_return\n  rule_clarify_incomplete_or_not_evaluable -. \"unknown\" .-> unresolved_unknown\n  rule_clarify_incomplete_or_not_evaluable -. \"cites\" .-> ev_intake_form\n  rule_proceed_complete_and_appropriate --> out_proceed\n  rule_proceed_complete_and_appropriate -. \"unknown\" .-> unresolved_unknown\n  ev_intake_form -. \"reads\" .-> rule_proceed_complete_and_appropriate\n  ev_sponsor_endorsement -. \"reads\" .-> rule_proceed_complete_and_appropriate\n  rule_proceed_complete_and_appropriate -. \"cites\" .-> ev_intake_form\n  rule_proceed_complete_and_appropriate -. \"cites\" .-> ev_sponsor_endorsement\n  out_proceed([\"Proceed\"])\n  out_clarify_return([\"Clarify / return\"])\n  out_decline_redirect([\"Decline / redirect\"])\n  no_rule_fired[\"no rule fired\"]\n  no_rule_fired -. \"fallbackOutcome\" .-> out_clarify_return\n  unresolved_unknown([\"unresolved (unknown)\"])\n  not_applicable([\"not-applicable\"])\n  escalation[/\"escalation \u2192 human-role: Intake reviewer\"/]\n  escalation_triggers[\"triggers: not-applicable, missing-required-evidence, unknown, conflict, no-match\"]\n  escalation_triggers -.-> escalation\n  applicability ~~~ evidence\n  evidence ~~~ exceptions\n  exceptions ~~~ rules\n"};
+mermaid.initialize({startOnLoad:false,theme:"neutral",flowchart:{useMaxWidth:false},themeVariables:{fontSize:"15px"}});
+const vp=document.getElementById("viewport"),cv=document.getElementById("canvas");
+let s=1,tx=0,ty=0,layer="core",dir="TD",seq=0;
+function apply(){cv.style.transform=`translate(${tx}px,${ty}px) scale(${s})`;}
+function fit(){
+  const svg=cv.querySelector("svg"); if(!svg) return;
+  const w=svg.getBoundingClientRect().width/s, h=svg.getBoundingClientRect().height/s;
+  s=Math.min(vp.clientWidth/w, vp.clientHeight/h)*0.95;
+  tx=(vp.clientWidth-w*s)/2; ty=(vp.clientHeight-h*s)/2; apply();
+}
+async function render(){
+  const src=SOURCES[layer].replace("flowchart TD","flowchart "+dir);
+  const {svg}=await mermaid.render("d"+(seq++), src);
+  cv.innerHTML=svg; fit();
+}
+document.getElementById("layers").addEventListener("click",e=>{
+  if(!e.target.dataset.l) return;
+  layer=e.target.dataset.l;
+  for(const b of e.target.parentNode.children) b.classList.toggle("on",b===e.target);
+  render();
+});
+document.getElementById("dir").addEventListener("click",e=>{
+  if(!e.target.dataset.d) return;
+  dir=e.target.dataset.d;
+  for(const b of e.target.parentNode.children) b.classList.toggle("on",b===e.target);
+  render();
+});
+vp.addEventListener("wheel",e=>{
+  e.preventDefault();
+  const k=e.deltaY<0?1.15:1/1.15, r=vp.getBoundingClientRect();
+  const mx=e.clientX-r.left,my=e.clientY-r.top;
+  tx=mx-(mx-tx)*k; ty=my-(my-ty)*k; s*=k; apply();
+},{passive:false});
+let drag=null;
+vp.addEventListener("mousedown",e=>{drag={x:e.clientX-tx,y:e.clientY-ty};vp.classList.add("dragging");});
+window.addEventListener("mousemove",e=>{if(drag){tx=e.clientX-drag.x;ty=e.clientY-drag.y;apply();}});
+window.addEventListener("mouseup",()=>{drag=null;vp.classList.remove("dragging");});
+vp.addEventListener("dblclick",fit);
+document.getElementById("fit").onclick=fit;
+render();
+</script>
+</body>
+</html>

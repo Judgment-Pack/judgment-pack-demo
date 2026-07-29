@@ -1,6 +1,6 @@
 # vendor-onboarding — pack diagram
 
-**[Open the zoomable viewer](http://localhost:8002/enterprise-demo/diagrams/vendor-onboarding.html)** — scroll to zoom, drag to pan, double-click to fit.
+**Zoomable viewer:** http://localhost:8002/enterprise-demo/diagrams/vendor-onboarding.html (layer toggles, zoom, pan)
 
 ```mermaid
 ---
