@@ -5,7 +5,7 @@
 # (a fresh sandbox container, a cloud runtime) it installs to ~/.local/bin.
 set -euo pipefail
 
-JP_VERSION="0.4.0"
+JP_VERSION="0.5.0"
 
 if command -v judgment-pack >/dev/null 2>&1; then
   judgment-pack version
