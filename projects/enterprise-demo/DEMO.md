@@ -8,10 +8,12 @@ Stack: OpenHands (agent-canvas) at `localhost:8000/canvas`, this project open, t
 `docker compose up -d`, then open TWO browser tabs:
 
 1. the chat: `localhost:8000/canvas`
-2. **the workspace: `./scripts/vscode-url.sh` prints the embedded VS Code URL**, opened on
-   this project — the left-hand file tree (`packs/`, `requests/`, `evidence/`, `diagrams/`)
-   and the mermaid markdown preview live here. Open `diagrams/vendor-onboarding.md`, hit
-   Ctrl+Shift+V, and leave that tab ready.
+2. **the pack viewer: `http://localhost:8002/enterprise-demo/diagrams/`** — the index lists
+   every pack; open `vendor-onboarding` and leave it on **Core flow**. This tab is the
+   visualization surface: layer toggles (Core flow / + Evidence / Full), Top-down or
+   Left-right, scroll to zoom, drag to pan.
+3. optional: the embedded VS Code (`./scripts/vscode-url.sh`) for the file-tree beat —
+   browsing `packs/`, `requests/`, `evidence/` as real files.
 
 ## 0. Frame (30s, no typing)
 
@@ -32,16 +34,10 @@ suite (14 rows, byte-exact).
 > **Prompt:** Show me the vendor-onboarding pack as a diagram.
 
 Expect: the agent runs `judgment-pack packs diagram --id vendor-onboarding` and writes
-`diagrams/vendor-onboarding.md`. The chat shows the fence as text (agent-canvas renders no
-mermaid) — the picture lives one click away: **open the conversation's VS Code tab, click
-`diagrams/vendor-onboarding.md` in the file tree, and open the markdown preview** (the
-mermaid extension is pre-installed). For the walkthrough itself, use the **zoomable viewer** at
-`http://localhost:8002/enterprise-demo/diagrams/vendor-onboarding.html` — the first line of
-the diagram .md is a clickable link to it, and it also opens *inside* VS Code via
-Ctrl+Shift+P → "Simple Browser: Show" with that URL. Scroll to zoom, drag to pan,
-double-click to fit; served by the compose stack, fully offline. Walk the flow — now laid
-out top-to-bottom in the pack's own evaluation order (applicability → evidence → exceptions
-→ rules → outcomes → escalation):
+`diagrams/vendor-onboarding.md`. Then **switch to the viewer tab** — that is the picture.
+Start on **Core flow** (clean: applicability → exceptions → rules → outcomes → escalation,
+top-to-bottom in the pack's own evaluation order), click **+ Evidence** to reveal what the
+conditions actually read versus merely cite, then **Full** for the unknown-paths. Walk it:
 sanctions hard-stop exception, the committee spend threshold, the `reads` edges into the
 screening evidence. "This diagram is generated from the pack, deterministically — it cannot
 drift from what was reviewed."
