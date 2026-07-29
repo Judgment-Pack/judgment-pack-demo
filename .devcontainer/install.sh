@@ -14,9 +14,9 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
 curl -fsSL -o "$TMP/jp.tar.gz" "$URL"
-tar -xzf "$TMP/jp.tar.gz" -C "$TMP" judgment-pack jpack
-sudo install -m 0755 "$TMP/judgment-pack" "$TMP/jpack" /usr/local/bin/
+tar -xzf "$TMP/jp.tar.gz" -C "$TMP" jpack
+sudo install -m 0755 "$TMP/jpack" /usr/local/bin/
 
-judgment-pack version
-judgment-pack spec test-conformance --quiet
-echo "judgment-pack ${JP_VERSION} installed; conformance corpus passes on this machine."
+jpack version
+jpack spec test-conformance --quiet
+echo "jpack ${JP_VERSION} installed; conformance corpus passes on this machine."

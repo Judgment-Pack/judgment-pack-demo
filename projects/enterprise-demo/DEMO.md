@@ -4,7 +4,7 @@ The story in one line: **policy as reviewed code, judgment as a deterministic ar
 agent as an honest clerk — and escalation, not hallucination, when something is unknown.**
 
 Stack: OpenHands (agent-canvas) at `localhost:8000/canvas`, this project open, the
-`judgment-pack` MCP server pre-seeded against `enterprise-demo/jpack.json`.
+`jpack` MCP server pre-seeded against `enterprise-demo/jpack.json`.
 **Model: `gemini-3.1-pro-preview`** — check the selector on every new chat; the lite models
 paraphrase instead of running tools (a rehearsal on flash-lite hand-drew its own diagram).
 The conversation's built-in **Files pane** (right side) is the browse surface. Before the demo:

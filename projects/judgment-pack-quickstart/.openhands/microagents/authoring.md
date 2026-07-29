@@ -11,7 +11,7 @@ triggers:
 # Authoring a Judgment Pack in this workspace
 
 Encode ONE policy decision as a Judgment Pack, working in a validate-and-fix loop
-against the judgment-pack MCP tools (or the `judgment-pack` CLI in the terminal).
+against the jpack MCP tools (or the `jpack` CLI in the terminal).
 Write pack documents as real files in this project's `packs/` directory and
 register them in `jpack.json` so `list_packs` and `packs test` see them.
 
@@ -64,7 +64,7 @@ Work in this order:
 7. LOOP. `validate` the draft; every diagnostic names its location and the fix;
    repair and repeat to exit 0. Then evaluate against 2–3 realistic facts
    documents (`experimental_evaluate`, or add matrix rows and run
-   `judgment-pack packs test`) and check the dispositions match intent —
+   `jpack packs test`) and check the dispositions match intent —
    including one probe with a load-bearing fact REMOVED, which should escalate,
    not guess.
 

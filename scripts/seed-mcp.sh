@@ -1,5 +1,5 @@
 #!/bin/sh
-# Register the judgment-pack MCP server in agent-canvas settings via its API.
+# Register the jpack MCP server in agent-canvas settings via its API.
 # agent-canvas keeps MCP configuration in its settings store (written by the UI
 # or this API), not in a config file, so a fresh instance self-seeds here.
 # Idempotent on content: an instance already pointing at this JPACK_CONFIG is
@@ -24,13 +24,13 @@ done
 KEY="$(cat "$KEY_FILE")"
 
 if curl -fsS -H "X-Session-API-Key: $KEY" "$URL/api/settings" | grep -q "\"JPACK_CONFIG\": *\"$JPACK_CONFIG\""; then
-  echo "seed-mcp: judgment-pack already configured for $JPACK_CONFIG"
+  echo "seed-mcp: jpack already configured for $JPACK_CONFIG"
   exit 0
 fi
 
 curl -fsS -X PATCH -H "X-Session-API-Key: $KEY" -H "Content-Type: application/json" \
   "$URL/api/settings" -o /dev/null \
-  -d "{\"agent_settings_diff\":{\"mcp_config\":{\"judgment-pack\":{\"transport\":\"stdio\",\"command\":\"judgment-pack\",\"args\":[\"mcp\"],\"env\":{\"JPACK_CONFIG\":\"$JPACK_CONFIG\"}}}}}"
+  -d "{\"agent_settings_diff\":{\"mcp_config\":{\"jpack\":{\"transport\":\"stdio\",\"command\":\"jpack\",\"args\":[\"mcp\"],\"env\":{\"JPACK_CONFIG\":\"$JPACK_CONFIG\"}}}}}"
 
-curl -fsS -H "X-Session-API-Key: $KEY" "$URL/api/settings" | grep -q '"judgment-pack"' \
-  && echo "seed-mcp: judgment-pack MCP server registered"
+curl -fsS -H "X-Session-API-Key: $KEY" "$URL/api/settings" | grep -q '"jpack"' \
+  && echo "seed-mcp: jpack MCP server registered"

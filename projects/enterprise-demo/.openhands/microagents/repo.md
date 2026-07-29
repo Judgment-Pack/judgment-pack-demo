@@ -3,7 +3,7 @@
 This project holds **judgment packs**: reviewed policy decisions encoded as JSON documents,
 evaluated deterministically by the `judgment-pack` runtime. You have its MCP tools
 (`list_packs`, `get_pack`, `experimental_evaluate`, `validate`, …) and its CLI
-(`judgment-pack`). The runtime decides from the pack; you gather inputs and narrate. Neither of
+(`jpack`). The runtime decides from the pack; you gather inputs and narrate. Neither of
 you invents facts.
 
 Layout: `jpack.json` (the project's packs), `packs/` (pack documents + instance matrices),
@@ -23,7 +23,7 @@ fill holes with plausible values. `annualSpendUsd` and every other amount is a d
 Do these **only when the user asks to see, show, or browse a pack** — never as part
 of answering an evaluation request.
 
-- Inventory: call the `list_packs` MCP tool, or run `judgment-pack packs list`.
+- Inventory: call the `list_packs` MCP tool, or run `jpack packs list`.
 - One pack's full document: `get_pack` with its decision id.
 - **Present**: when the user asks to see, show, or understand a pack, build the lightest
   faithful representation for their question, grounded ONLY in the document from `get_pack`:
@@ -88,9 +88,9 @@ When the user asks to encode a policy as a new pack, work this loop:
    diagnostic names its location and the fix. Repair and repeat until the result is valid.
 4. **Register**: write the file to `packs/<decision-id>.pack.json`, add the entry to
    `jpack.json` (path, description, expectedVersion, any facts/evidence hints), and run
-   `judgment-pack packs validate` in the terminal — every check must pass.
+   `jpack packs validate` in the terminal — every check must pass.
 5. **Test**: write a small instance matrix (`packs/<decision-id>.matrix.json`) — one row per
-   outcome plus an unknown probe — register it, and run `judgment-pack packs test`. Byte-exact
+   outcome plus an unknown probe — register it, and run `jpack packs test`. Byte-exact
    expectations: run one evaluation first if unsure of the exact disposition bytes.
    **When a row mismatches, the policy text is the arbiter**: decide whether the pack or the
    row is wrong before touching either, and never weaken the pack — a required flag, a gate,

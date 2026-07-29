@@ -26,7 +26,7 @@ file browser.
 The judgment-pack MCP server registers itself on first boot: the `mcp-seed` oneshot container
 ([scripts/seed-mcp.sh](scripts/seed-mcp.sh)) writes it into agent-canvas settings through the
 API, pointed at the quickstart project. Verify under **Settings → MCP** — the entry reads
-`judgment-pack` / command `judgment-pack` / args `mcp`.
+`jpack` / command `jpack` / args `mcp`.
 
 ### Where packs live
 
@@ -44,13 +44,13 @@ In the sandbox terminal (or any shell with the binary on PATH):
 cd /projects/judgment-pack-quickstart
 
 # A full facts document decides:
-judgment-pack experimental evaluate packs/data-request-intake-triage.pack.json \
+jpack experimental evaluate packs/data-request-intake-triage.pack.json \
   --facts full-facts.json --evidence evidence.json
 # → disposition: outcome proceed, with a trace of exactly which rules fired
 
 # Delete a load-bearing fact and re-run — it ESCALATES instead of guessing:
 jq 'del(.request.completeness)' full-facts.json > partial-facts.json
-judgment-pack experimental evaluate packs/data-request-intake-triage.pack.json \
+jpack experimental evaluate packs/data-request-intake-triage.pack.json \
   --facts partial-facts.json --evidence evidence.The
 `trace` in every payload is the pack-grounded reasoning: which exception and rule evaluated to
 what, which unknowns were escalating, which were ignored.
@@ -71,7 +71,7 @@ what, which unknowns were escalating, which were ignored.
    [authoring microagent](projects/judgment-pack-quickstart/.openhands/microagents/authoring.md)
    guides the agent through the create → validate → fix loop to exit-0, writing the pack and its
    prepared-facts ledger as real files you can watch appear in the file explorer. Ask it to add
-   matrix rows and run `judgment-pack packs test` to lock the behavior in.
+   matrix rows and run `jpack packs test` to lock the behavior in.
 
 ## Other clients (same server, your tools)
 
@@ -80,7 +80,7 @@ PATH ([releases](https://github.com/Judgment-Pack/judgment-pack-runtime/releases
 
 - **Claude Code**: [.mcp.json](.mcp.json) is picked up when you open this repo; MCP prompts
   appear as slash commands (`/mcp__judgment-pack__author_pack`).
-- **VS Code / Copilot**: [.vscode/mcp.json](.vscode/mcp.json), prompts as `/mcp.judgment-pack.…`.
+- **VS Code / Copilot**: [.vscode/mcp.json](.vscode/mcp.json), prompts as `/mcp.jpack.…`.
 - **GitHub Codespaces / devcontainer**: open this repo in a Codespace — the
   [devcontainer](.devcontainer/devcontainer.json) installs the pinned release and proves the
   conformance corpus on creation.
@@ -100,14 +100,14 @@ PATH ([releases](https://github.com/Judgment-Pack/judgment-pack-runtime/releases
 
 ## Troubleshooting
 
-- **Tools missing in chat** — check Settings → MCP for the `judgment-pack` entry; re-run the
+- **Tools missing in chat** — check Settings → MCP for the `jpack` entry; re-run the
   seeding with `docker compose run --rm mcp-seed` (idempotent), or add the entry in the UI.
 - **`list_packs` answers empty** — it says where it looked; the server's `JPACK_CONFIG` must
   name your project's `jpack.json` by its container path (under `/projects/…`). Edit the entry
   in Settings → MCP, or re-seed with `JPACK_CONFIG=/projects/<your-project>/jpack.json
   docker compose run --rm -e JPACK_CONFIG mcp-seed`.
-- **Binary problems** — `docker compose exec openhands judgment-pack version` must report the
-  pinned release; `judgment-pack spec test-conformance --quiet` (exit 0) proves the published
+- **Binary problems** — `docker compose exec openhands jpack version` must report the
+  pinned release; `jpack spec test-conformance --quiet` (exit 0) proves the published
   corpus passes inside your container, offline.
 - Versions are pinned in [.env.example](.env.example) and re-verified weekly by
   [drift CI](.github/workflows/drift.yml).
