@@ -21,8 +21,8 @@ services:
     # `docker compose up` (state and MCP seeding persist in ./state).
     restart: unless-stopped
 
-  # Static server for the zoomable diagram viewers: reachable from the host
-  # browser AND from the Simple Browser inside the embedded VS Code.
+  # Static server for the zoomable diagram viewers, reachable from the host
+  # browser.
   diagrams:
     image: nginx:alpine
     ports:

@@ -14,7 +14,7 @@ Act 2 must start with three packs, not four). Then:
 
 1. **Window 1 — chat**: `localhost:8000/canvas` → New Chat **with the enterprise-demo
    project selected**, so the right-hand **Files pane** shows `packs/`, `requests/`,
-   `evidence/`, `diagrams/` — that pane is the file-browsing surface (no VS Code).
+   `evidence/`, `diagrams/` — that pane is the file-browsing surface.
 2. **Window 2 — the pack viewer**: `http://localhost:8002/enterprise-demo/diagrams/` →
    `vendor-onboarding`, leave it on **Core flow**. Layer toggles, Top-down/Left-right,
    zoom, pan.
@@ -130,7 +130,7 @@ already the story.
 - Agent invents a screening status in step 5 → "Where is the screening record? Report what
   you cannot source as unknown." (The pack still protects you: a guessed `clear` is the one
   thing the honesty rule exists to prevent — restate it.)
-- Chat never renders mermaid (agent-canvas limitation) — the visual is the VS Code markdown
-  preview or the pre-built `diagrams/vendor-onboarding.html`; both work offline.
+- Chat never renders mermaid (agent-canvas limitation) — the visual is the viewer at
+  `localhost:8002`; it works offline.
 - Model/API hiccup → `packs test` in the terminal shows the 14-row byte-exact suite as the
   determinism proof without any model.
