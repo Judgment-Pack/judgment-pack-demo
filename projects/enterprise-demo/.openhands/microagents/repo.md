@@ -25,10 +25,21 @@ of answering an evaluation request.
 
 - Inventory: call the `list_packs` MCP tool, or run `judgment-pack packs list`.
 - One pack's full document: `get_pack` with its decision id.
-- **Visualize**: run `judgment-pack packs diagram --id <decision-id>` in the terminal. Write
-  the output into `diagrams/<decision-id>.md` wrapped in a fenced code block labeled
-  `mermaid`, tell the user the file is ready, and also paste the fenced diagram into your chat
-  reply. Node meanings: member nodes quote the pack; `unresolved (unknown)` /
+- **Visualize**: run `judgment-pack packs diagram --id <decision-id>` in the terminal, then
+  write `diagrams/<decision-id>.md` in EXACTLY this shape — heading, blank line, fence, the
+  command's output verbatim, closing fence:
+
+  ```
+  # <decision-id> — pack diagram
+
+  ```mermaid
+  <the command's output>
+  ```
+  ```
+
+  The fence is what makes the VS Code preview and GitHub render it as a diagram; a file
+  without it shows as plain text. Tell the user: open the file in the VS Code tab and press
+  Ctrl+Shift+V. Also paste the fenced diagram into your chat reply. Node meanings: member nodes quote the pack; `unresolved (unknown)` /
   `not-applicable` / `no rule fired` are resolution states; `reads` edges are evidence a
   condition actually tests, `cites` edges are citations.
 

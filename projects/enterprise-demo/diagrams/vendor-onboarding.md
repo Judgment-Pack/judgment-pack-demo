@@ -1,3 +1,6 @@
+# Vendor onboarding — pack diagram
+
+```mermaid
 ---
 title: "https://example.invalid/judgment-packs/vendor-onboarding 0.1.0"
 ---
@@ -41,3 +44,4 @@ flowchart TD
   escalation[/"escalation → human-role: Vendor risk committee"/]
   escalation_triggers["triggers: not-applicable, missing-required-evidence, unknown, conflict, no-match"]
   escalation_triggers -.-> escalation
+```
