@@ -5,7 +5,7 @@
 # (a fresh sandbox container, a cloud runtime) it installs to ~/.local/bin.
 set -euo pipefail
 
-JP_VERSION="0.6.0"
+JP_VERSION="0.7.0"
 
 if command -v jpack >/dev/null 2>&1; then
   jpack version
