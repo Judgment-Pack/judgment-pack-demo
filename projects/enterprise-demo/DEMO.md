@@ -7,8 +7,7 @@ Stack: OpenHands (agent-canvas) at `localhost:8000/canvas`, this project open, t
 `judgment-pack` MCP server pre-seeded against `enterprise-demo/jpack.json`.
 **Model: `gemini-3.1-pro-preview`** — check the selector on every new chat; the lite models
 paraphrase instead of running tools (a rehearsal on flash-lite hand-drew its own diagram).
-The conversation's built-in **Files pane** (right side) is the browse surface; the viewer tab
-is the picture. Before the demo:
+The conversation's built-in **Files pane** (right side) is the browse surface. Before the demo:
 `docker compose up -d`, then:
 
 1. **Window 1 — chat**: `localhost:8000/canvas` → New Chat **with the enterprise-demo
