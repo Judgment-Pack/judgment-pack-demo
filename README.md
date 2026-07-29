@@ -23,9 +23,10 @@ and paste your API key (BYOK — any supported provider works; a frontier-class 
 best results in the scripted asks below). Then open the `judgment-pack-quickstart` project in the
 file browser.
 
-The judgment-pack MCP server is pre-configured ([state/config.toml](state/config.toml)) and
-pointed at the quickstart project. If the tools don't appear, check **Settings → MCP** — the
-entry should read `judgment-pack` / command `judgment-pack` / args `mcp`.
+The judgment-pack MCP server registers itself on first boot: the `mcp-seed` oneshot container
+([scripts/seed-mcp.sh](scripts/seed-mcp.sh)) writes it into agent-canvas settings through the
+API, pointed at the quickstart project. Verify under **Settings → MCP** — the entry reads
+`judgment-pack` / command `judgment-pack` / args `mcp`.
 
 ### Where packs live
 
@@ -104,11 +105,12 @@ PATH ([releases](https://github.com/Judgment-Pack/judgment-pack-runtime/releases
 
 ## Troubleshooting
 
-- **Tools missing in chat** — check Settings → MCP for the `judgment-pack` entry; restart the
-  container after editing [state/config.toml](state/config.toml).
-- **`list_packs` answers empty** — it says where it looked; `JPACK_CONFIG` in
-  [state/config.toml](state/config.toml) must name your project's `jpack.json`
-  (container path, i.e. under `/projects/…`).
+- **Tools missing in chat** — check Settings → MCP for the `judgment-pack` entry; re-run the
+  seeding with `docker compose run --rm mcp-seed` (idempotent), or add the entry in the UI.
+- **`list_packs` answers empty** — it says where it looked; the server's `JPACK_CONFIG` must
+  name your project's `jpack.json` by its container path (under `/projects/…`). Edit the entry
+  in Settings → MCP, or re-seed with `JPACK_CONFIG=/projects/<your-project>/jpack.json
+  docker compose run --rm -e JPACK_CONFIG mcp-seed`.
 - **Binary problems** — `docker compose exec openhands judgment-pack version` must report the
   pinned release; `judgment-pack spec test-conformance --quiet` (exit 0) proves the published
   corpus passes inside your container, offline.

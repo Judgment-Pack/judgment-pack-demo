@@ -44,3 +44,15 @@ jobs:
 
       - name: Demo image builds
         run: docker compose build
+
+      - name: Stack comes up, seeds MCP, and the server lists its tools
+        run: |
+          docker compose up -d --wait openhands || docker compose up -d openhands
+          docker compose run --rm mcp-seed
+          KEY=$(sudo cat state/agent-canvas/api-key.txt)
+          curl -fsS -H "X-Session-API-Key: $KEY" http://localhost:8000/api/settings | grep -q '"judgment-pack"'
+          curl -fsS -X POST -H "X-Session-API-Key: $KEY" -H "Content-Type: application/json" \
+            http://localhost:8000/api/mcp/test \
+            -d '{"name":"judgment-pack","server":{"type":"stdio","command":"judgment-pack","args":["mcp"],"env":{"JPACK_CONFIG":"/projects/judgment-pack-quickstart/jpack.json"}}}' \
+            | grep -q '"experimental_evaluate"'
+          docker compose down
