@@ -13,4 +13,20 @@ RUN mkdir -p /out \
  && tar -xzf /tmp/jp.tar.gz -C /out judgment-pack jpack
 
 FROM ghcr.io/openhands/agent-canvas:${AGENT_CANVAS_VERSION}
+# Align the container user with the host user so the bind mounts (state/ and
+# your packs directory) are writable, and files the agent writes land on your
+# disk owned by you.
+ARG HOST_UID=1000
+ARG HOST_GID=1000
+USER root
+RUN if [ "$(id -u openhands)" != "${HOST_UID}" ] || [ "$(id -g openhands)" != "${HOST_GID}" ]; then \
+      u="$(getent passwd "${HOST_UID}" | cut -d: -f1)"; \
+      if [ -n "$u" ] && [ "$u" != "openhands" ]; then usermod -u 61000 "$u"; fi; \
+      g="$(getent group "${HOST_GID}" | cut -d: -f1)"; \
+      if [ -n "$g" ] && [ "$g" != "openhands" ]; then groupmod -g 61000 "$g"; fi; \
+      groupmod -g "${HOST_GID}" openhands; \
+      usermod -u "${HOST_UID}" -g "${HOST_GID}" openhands; \
+      chown -R "${HOST_UID}:${HOST_GID}" /home/openhands /openhands /workspace /projects; \
+    fi
 COPY --from=fetch --chmod=755 /out/judgment-pack /out/jpack /usr/local/bin/
+USER openhands
