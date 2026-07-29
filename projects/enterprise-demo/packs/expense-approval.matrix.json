@@ -1,0 +1,26 @@
+{
+  "matrixVersion": "1",
+  "cases": [
+    {
+      "id": "reimburse-small-meal",
+      "facts": {"expense": {"kind": "meal", "category": "team-meal", "amountUsd": "42.50"}},
+      "evidenceAvailability": {"itemised-receipt": "present"},
+      "supportedExtensions": [],
+      "expectedDisposition": {"kind": "outcome", "outcomeId": "reimburse", "reasons": [], "handoff": {"state": "none"}}
+    },
+    {
+      "id": "deny-gift-cards",
+      "facts": {"expense": {"kind": "supplies", "category": "gift-cards", "amountUsd": "42.50"}},
+      "evidenceAvailability": {"itemised-receipt": "present"},
+      "supportedExtensions": [],
+      "expectedDisposition": {"kind": "outcome", "outcomeId": "deny", "reasons": [], "handoff": {"state": "none"}}
+    },
+    {
+      "id": "large-amount-needs-review",
+      "facts": {"expense": {"kind": "travel", "category": "airfare", "amountUsd": "980.00"}},
+      "evidenceAvailability": {"itemised-receipt": "present"},
+      "supportedExtensions": [],
+      "expectedDisposition": {"kind": "outcome", "outcomeId": "review", "reasons": [], "handoff": {"state": "none"}}
+    }
+  ]
+}

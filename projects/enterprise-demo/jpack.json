@@ -1,0 +1,60 @@
+{
+ "configVersion": "1",
+ "packs": {
+  "vendor-onboarding": {
+   "path": "packs/vendor-onboarding.pack.json",
+   "matrix": "packs/vendor-onboarding.matrix.json",
+   "description": "May this vendor be onboarded?",
+   "expectedVersion": "0.1.0",
+   "facts": {
+    "/vendor/sanctionsScreening/status": {
+     "source": "OFAC public sanctions list search (sanctionssearch.ofac.treas.gov)",
+     "hint": "screen the vendor's exact legal name; record clear, match, or omit the pointer entirely if the search could not be completed — never guess"
+    },
+    "/vendor/taxFormStatus": {
+     "source": "the onboarding request",
+     "hint": "received or pending, exactly as the requester stated it"
+    },
+    "/submission/completeness": {
+     "source": "the onboarding request",
+     "hint": "complete only when every mandatory field is present"
+    },
+    "/engagement/annualSpendUsd": {
+     "source": "the onboarding request",
+     "hint": "a decimal STRING like \"84000\" — a JSON number compares as unknown and will escalate"
+    }
+   },
+   "evidence": {
+    "sanctions-screening": {
+     "source": "evidence/ folder, or a fresh OFAC search you record there",
+     "hint": "present only when a dated screening record for this exact vendor exists; absent means you looked and there is none"
+    },
+    "tax-form": {
+     "source": "evidence/ folder",
+     "hint": "present only when the vendor's tax form is on file"
+    }
+   }
+  },
+  "expense-approval": {
+   "path": "packs/expense-approval.pack.json",
+   "matrix": "packs/expense-approval.matrix.json",
+   "description": "May this expense be reimbursed without sign-off?",
+   "expectedVersion": "0.1.0",
+   "evidence": {
+    "itemised-receipt": {
+     "source": "the expense submission",
+     "hint": "present only when an itemised receipt is attached"
+    }
+   }
+  },
+  "intake-triage": {
+   "path": "packs/data-request-intake-triage.pack.json",
+   "matrix": "packs/data-request-intake-triage.matrix.json",
+   "description": "May this data request proceed, be clarified, or be declined?",
+   "evidence": {
+    "intake-form": {"source": "sharepoint", "hint": "/sites/ops/intake-forms"},
+    "sponsor-endorsement": {"source": "sharepoint", "hint": "/sites/ops/endorsements"}
+   }
+  }
+ }
+}

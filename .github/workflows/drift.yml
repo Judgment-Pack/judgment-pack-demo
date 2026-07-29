@@ -35,6 +35,12 @@ jobs:
           judgment-pack packs validate
           judgment-pack packs test
 
+      - name: Enterprise demo project validates and its matrices pass
+        working-directory: projects/enterprise-demo
+        run: |
+          judgment-pack packs validate
+          judgment-pack packs test
+
       - name: MCP server answers the handshake
         run: |
           printf '%s\n%s\n%s\n' \
