@@ -31,3 +31,8 @@ RUN if [ "$(id -u openhands)" != "${HOST_UID}" ] || [ "$(id -g openhands)" != "$
 COPY --from=runtime --chmod=755 /judgment-pack /usr/local/bin/judgment-pack
 COPY --from=runtime --chmod=755 /judgment-pack /usr/local/bin/jpack
 USER openhands
+
+# The chat panel renders no mermaid; the embedded VS Code does once this
+# extension (from open-vsx) is present. Diagrams open as real diagrams:
+# file tree -> diagrams/<id>.md -> markdown preview.
+RUN /openhands/.openvscode-server/bin/openvscode-server --install-extension bierner.markdown-mermaid
