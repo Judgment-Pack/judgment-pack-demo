@@ -4,10 +4,10 @@ services:
       context: .
       args:
         AGENT_CANVAS_VERSION: ${AGENT_CANVAS_VERSION:-1.6.1}
-        JUDGMENT_PACK_VERSION: ${JUDGMENT_PACK_VERSION:-0.5.0}
+        JUDGMENT_PACK_VERSION: ${JUDGMENT_PACK_VERSION:-0.6.0}
         HOST_UID: ${HOST_UID:-1000}
         HOST_GID: ${HOST_GID:-1000}
-    image: judgment-pack-demo:${JUDGMENT_PACK_VERSION:-0.5.0}
+    image: judgment-pack-demo:${JUDGMENT_PACK_VERSION:-0.6.0}
     ports:
       - "127.0.0.1:8000:8000"
     volumes:
