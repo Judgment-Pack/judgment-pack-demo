@@ -128,7 +128,8 @@ already the story.
 - Agent invents a screening status in step 5 → "Where is the screening record? Report what
   you cannot source as unknown." (The pack still protects you: a guessed `clear` is the one
   thing the honesty rule exists to prevent — restate it.)
-- Chat never renders mermaid (agent-canvas limitation) — the visual is the VS Code markdown
-  preview or the pre-built `diagrams/vendor-onboarding.html`; both work offline.
+- Chat never renders mermaid (agent-canvas limitation) — the fence is the verbatim
+  artifact; the committed `diagrams/*.md` render as flowcharts on GitHub when a drawn
+  picture is wanted.
 - Model/API hiccup → `packs test` in the terminal shows the 14-row byte-exact suite as the
   determinism proof without any model.
