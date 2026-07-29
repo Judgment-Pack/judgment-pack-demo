@@ -1,0 +1,86 @@
+{
+  "specVersion": "0.2.0-draft",
+  "id": "https://example.invalid/judgment-packs/sanctions-screening",
+  "version": "0.1.0",
+  "title": "Sanctions screening",
+  "description": "Decide whether a counterparty's sanctions screening run came back clear or matched, from the match count the run recorded. This is the upstream decision vendor onboarding consumes: its outcome is the value onboarding reads at /vendor/sanctionsScreening/status, declared as a graph edge instead of copied in by hand. Synthetic demo content; it authorizes nothing.",
+  "decision": {
+    "intent": "Establish the screening decision for one counterparty from the recorded screening run, so downstream decisions consume a decision rather than a transcribed value.",
+    "question": "Did the sanctions screening run come back clear for this counterparty, or did it match?"
+  },
+  "evidenceRequirements": [
+    {
+      "id": "screening-record",
+      "description": "The screening run's recorded result for this counterparty, naming the lists searched and the match count.",
+      "required": true,
+      "kind": "document"
+    }
+  ],
+  "sources": [
+    {
+      "id": "ofac-sdn",
+      "title": "OFAC Specially Designated Nationals and Blocked Persons List",
+      "publisher": "U.S. Department of the Treasury, Office of Foreign Assets Control",
+      "publishedAt": "2026-01-01",
+      "locator": { "kind": "uri", "value": "https://sanctionslist.ofac.treas.gov/" },
+      "citation": {
+        "location": "Public sanctions list search",
+        "excerpt": "Screening a counterparty against the SDN and consolidated lists is public and free; a match blocks the transaction pending review."
+      },
+      "rights": "Public U.S. government data; cited as the screening source."
+    }
+  ],
+  "outcomes": [
+    {
+      "id": "clear",
+      "label": "Clear",
+      "description": "The screening run recorded no potential match."
+    },
+    {
+      "id": "match",
+      "label": "Match",
+      "description": "The screening run recorded at least one potential match."
+    }
+  ],
+  "rules": [
+    {
+      "id": "clear-when-zero-matches",
+      "description": "Clear the counterparty when the recorded match count is exactly zero.",
+      "when": {
+        "op": "fact",
+        "path": "/screening/matchCount",
+        "operator": "equals",
+        "value": "0"
+      },
+      "outcome": "clear",
+      "onUnknown": "escalate",
+      "rationale": "A missing or unreadable match count is not a clean screening; escalating is preferred to guessing."
+    },
+    {
+      "id": "match-when-any-match",
+      "description": "Report a match when the recorded match count is one or more.",
+      "when": {
+        "op": "fact",
+        "path": "/screening/matchCount",
+        "operator": "greater-than-or-equal",
+        "value": "1"
+      },
+      "outcome": "match",
+      "onUnknown": "escalate",
+      "rationale": "A count that cannot be ordered against one is not a count this pack can act on."
+    }
+  ],
+  "escalation": {
+    "triggers": ["missing-required-evidence", "unknown", "conflict", "no-match"],
+    "target": {
+      "kind": "human-role",
+      "name": "Compliance"
+    },
+    "message": "Escalate to Compliance: state what is unknown or missing about the screening run, and do not treat the counterparty as screened while the escalation is open."
+  },
+  "metadata": {
+    "authors": ["Judgment Pack demo"],
+    "createdAt": "2026-07-29T00:00:00Z",
+    "license": "Apache-2.0"
+  }
+}

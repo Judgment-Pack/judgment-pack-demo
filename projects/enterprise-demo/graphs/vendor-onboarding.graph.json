@@ -1,0 +1,28 @@
+{
+  "formatVersion": "1",
+  "id": "vendor-onboarding-flow",
+  "version": "0.1.0",
+  "description": "The sanctions screening decision feeds vendor onboarding: its outcome lands at the fact pointer the onboarding rules read, and its resolution state is the sanctions-screening evidence. This declares the seam the packs previously bridged by hand-copied facts.",
+  "nodes": {
+    "screening": {
+      "pack": "sanctions-screening",
+      "description": "Establish the screening decision first."
+    },
+    "onboarding": {
+      "pack": "vendor-onboarding",
+      "description": "Decide onboarding from the screening decision's outcome."
+    }
+  },
+  "edges": [
+    {
+      "from": "screening",
+      "to": "onboarding",
+      "fact": "/vendor/sanctionsScreening/status",
+      "evidence": {
+        "id": "sanctions-screening"
+      },
+      "description": "clear or match lands at /vendor/sanctionsScreening/status, and the sanctions-screening evidence is present exactly when the screening decision resolved."
+    }
+  ],
+  "result": "onboarding"
+}

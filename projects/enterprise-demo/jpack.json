@@ -35,6 +35,24 @@
     }
    }
   },
+  "sanctions-screening": {
+   "path": "packs/sanctions-screening.pack.json",
+   "matrix": "packs/sanctions-screening.matrix.json",
+   "description": "Did the sanctions screening come back clear for this counterparty?",
+   "expectedVersion": "0.1.0",
+   "facts": {
+    "/screening/matchCount": {
+     "source": "OFAC public sanctions list search (sanctionssearch.ofac.treas.gov)",
+     "hint": "the number of potential matches the search returned, as a decimal STRING like \"0\"; omit the pointer entirely if the search could not be completed — never guess"
+    }
+   },
+   "evidence": {
+    "screening-record": {
+     "source": "evidence/ folder, or a fresh OFAC search you record there",
+     "hint": "present only when a dated screening record for this exact counterparty exists"
+    }
+   }
+  },
   "expense-approval": {
    "path": "packs/expense-approval.pack.json",
    "matrix": "packs/expense-approval.matrix.json",
