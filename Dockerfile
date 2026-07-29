@@ -35,4 +35,8 @@ USER openhands
 # The chat panel renders no mermaid; the embedded VS Code does once this
 # extension (from open-vsx) is present. Diagrams open as real diagrams:
 # file tree -> diagrams/<id>.md -> markdown preview.
-RUN /openhands/.openvscode-server/bin/openvscode-server --install-extension bierner.markdown-mermaid
+# --extensions-dir must be the SERVER's dir: the CLI defaults to the user
+# home, which the running server never reads (its launcher pins this path).
+RUN /openhands/.openvscode-server/bin/openvscode-server \
+      --extensions-dir /openhands/.openvscode-server/extensions \
+      --install-extension bierner.markdown-mermaid
