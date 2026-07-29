@@ -111,6 +111,36 @@ Expect, in order (nudge with the step name if the agent stalls):
    wrote. Close: *"policy to reviewed artifact, minutes, and nothing in that pipeline
    trusted the model's judgment — only its labor."*
 
+### Act 2b — the newborn pack judges (~2.5 min, after the table)
+
+6. **Record and accept**
+   > **Prompt:** A vendor's account manager took our engineer to a working lunch yesterday
+   > — 32 USD, the giver works for a private company. Enter it in the gift register and
+   > evaluate it honestly.
+
+   Expect: a register record appears under `evidence/` (a clerical record of what you
+   stated), facts with the decimal string "32" → **accept**, both rules narrated. Say:
+   *"the pack you watched being born just made its first decision."*
+
+7. **The unknown giver** (Act 2's money shot)
+   > **Prompt:** Another one: a 45 USD gift basket, but we cannot establish whether the
+   > giver's employer is state-owned. It is in the register. Evaluate honestly.
+
+   Expect: the official-status fact omitted, not guessed → **unresolved (unknown)** →
+   handoff **requested → Compliance**. The policy's own sentence — "if the giver's status
+   cannot be established, refer to Compliance" — happening live in a pack minutes old.
+
+8. **Not in the register** (optional)
+   > **Prompt:** One more: a 20 USD coffee gift card nobody entered in the register.
+   > Evaluate it.
+
+   Expect: the register requirement unmet → never an auto-accept; decline/refer or
+   escalation per the pack's shape. Absence is a different answer than unknown.
+
+The pack is generated live, so its exact structure varies per run — judge the beats by
+policy behavior (over-50 declines, unknown status escalates, unregistered gifts never
+auto-accept), not by rule names.
+
 **Act 2 fallbacks**: if the agent writes the file before validating, ask it to validate the
 document with the validate tool now and fix what it reports. If matrix expectations
 mismatch on bytes, have it run one evaluation and copy the actual disposition — mismatches
