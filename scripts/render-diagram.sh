@@ -5,7 +5,9 @@
 set -eu
 proj="projects/enterprise-demo"
 version="${JUDGMENT_PACK_VERSION:-0.6.2}"
-ids="vendor-onboarding expense-approval intake-triage"
+# Every pack the project declares, so a newly authored pack gets its viewer
+# page and index entry in the same pass.
+ids="$(python3 -c "import json; print(' '.join(sorted(json.load(open('$proj/jpack.json'))['packs'])))")"
 tmp="$(mktemp -d)"
 specs=""
 for id in $ids; do

@@ -90,6 +90,38 @@ human decides above the threshold."
   image, and registry entry are public (`ghcr.io/judgment-pack/judgment-pack`,
   `io.github.Judgment-Pack/judgment-pack`).
 
+## Act 2 — author a pack live (optional, ~5 min)
+
+The encore: a new policy becomes a reviewed, validated, diagrammed artifact while they watch.
+
+> **Prompt:** Encode this policy as a new judgment pack called gifts-hospitality:
+> "Employees may accept gifts or hospitality up to 50 USD without approval, provided the
+> giver is not a government official and the gift is entered in the gift register.
+> Anything above 50 USD, or anything from a government official, must be declined or
+> referred to Compliance. If the value or the giver's status cannot be established, refer
+> to Compliance."
+
+Expect, in order (nudge with the step name if the agent stalls):
+
+1. A draft pack: outcomes like `accept` / `decline` / `refer-compliance`; a decimal-string
+   threshold ("50"); a government-official gate; a gift-register evidence requirement;
+   `onUnknown: escalate` wired to a Compliance escalation target.
+2. **The validate loop in chat** — the draft goes to the `validate` tool, diagnostics come
+   back naming locations and fixes, the agent repairs. Let one failure happen visibly:
+   *"the validator, not the model, is the gatekeeper."*
+3. Registration: the file lands in `packs/` (watch the Files pane), `jpack.json` grows an
+   entry, `packs validate` passes in the terminal.
+4. A small matrix + `packs test` — the new pack has a regression suite minutes after birth.
+5. `sh scripts/render-diagram.sh` — then **refresh the viewer index**: the new pack is in
+   the portfolio, diagrammed, zoomable. Close: *"policy to reviewed artifact, minutes, and
+   nothing in that pipeline trusted the model's judgment — only its labor."*
+
+**Act 2 fallbacks**: if the agent writes the file before validating, ask it to validate the
+document with the validate tool now and fix what it reports. If matrix expectations
+mismatch on bytes, have it run one evaluation and copy the actual disposition — mismatches
+are diffs, not mysteries. If time is short, stop after step 3: validated and registered is
+already the story.
+
 ## Fallbacks
 
 - Agent narrates without evaluating → "Call the experimental_evaluate tool with pack_id
