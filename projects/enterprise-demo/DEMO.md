@@ -35,8 +35,9 @@ Expect: the agent runs `judgment-pack packs diagram --id vendor-onboarding` and 
 `diagrams/vendor-onboarding.md`. The chat shows the fence as text (agent-canvas renders no
 mermaid) — the picture lives one click away: **open the conversation's VS Code tab, click
 `diagrams/vendor-onboarding.md` in the file tree, and open the markdown preview** (the
-mermaid extension is pre-installed) — or open `diagrams/vendor-onboarding.html` in any
-browser (renders offline). Walk the flow:
+mermaid extension is pre-installed). For the walkthrough itself, use the **zoomable viewer**:
+`./scripts/open-diagram.sh` opens `diagrams/vendor-onboarding.html` in your host browser —
+scroll to zoom, drag to pan, double-click to fit, fully offline. Walk the flow:
 sanctions hard-stop exception, the committee spend threshold, the `reads` edges into the
 screening evidence. "This diagram is generated from the pack, deterministically — it cannot
 drift from what was reviewed."
