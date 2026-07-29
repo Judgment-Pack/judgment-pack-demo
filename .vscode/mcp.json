@@ -1,8 +1,8 @@
 {
   "servers": {
-    "judgment-pack": {
+    "jpack": {
       "type": "stdio",
-      "command": "judgment-pack",
+      "command": "jpack",
       "args": ["mcp"],
       "env": {
         "JPACK_CONFIG": "${workspaceFolder}/projects/judgment-pack-quickstart/jpack.json"

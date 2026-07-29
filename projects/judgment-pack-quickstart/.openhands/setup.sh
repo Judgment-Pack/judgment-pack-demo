@@ -7,8 +7,8 @@ set -euo pipefail
 
 JP_VERSION="0.6.0"
 
-if command -v judgment-pack >/dev/null 2>&1; then
-  judgment-pack version
+if command -v jpack >/dev/null 2>&1; then
+  jpack version
   exit 0
 fi
 
@@ -24,12 +24,12 @@ trap 'rm -rf "$TMP"' EXIT
 
 mkdir -p "$HOME/.local/bin"
 curl -fsSL -o "$TMP/jp.tar.gz" "$URL" || wget -qO "$TMP/jp.tar.gz" "$URL"
-tar -xzf "$TMP/jp.tar.gz" -C "$TMP" judgment-pack jpack
-install -m 0755 "$TMP/judgment-pack" "$TMP/jpack" "$HOME/.local/bin/"
+tar -xzf "$TMP/jp.tar.gz" -C "$TMP" jpack
+install -m 0755 "$TMP/jpack" "$HOME/.local/bin/"
 
 case ":$PATH:" in
   *":$HOME/.local/bin:"*) ;;
   *) echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc" ;;
 esac
 
-"$HOME/.local/bin/judgment-pack" version
+"$HOME/.local/bin/jpack" version

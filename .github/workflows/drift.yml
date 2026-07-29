@@ -22,24 +22,24 @@ jobs:
       - name: Install the pinned judgment-pack release
         run: |
           curl -fsSL -o jp.tar.gz "https://github.com/Judgment-Pack/judgment-pack-runtime/releases/download/v${JP_VERSION}/judgment-pack_${JP_VERSION}_linux_amd64.tar.gz"
-          tar -xzf jp.tar.gz judgment-pack jpack
-          sudo install -m 0755 judgment-pack jpack /usr/local/bin/
-          judgment-pack version
+          tar -xzf jp.tar.gz jpack
+          sudo install -m 0755 jpack /usr/local/bin/
+          jpack version
 
       - name: Conformance corpus passes on this machine
-        run: judgment-pack spec test-conformance --quiet
+        run: jpack spec test-conformance --quiet
 
       - name: Seed project validates and its matrix passes
         working-directory: projects/judgment-pack-quickstart
         run: |
-          judgment-pack packs validate
-          judgment-pack packs test
+          jpack packs validate
+          jpack packs test
 
       - name: Enterprise demo project validates and its matrices pass
         working-directory: projects/enterprise-demo
         run: |
-          judgment-pack packs validate
-          judgment-pack packs test
+          jpack packs validate
+          jpack packs test
 
       - name: MCP server answers the handshake
         run: |
@@ -47,7 +47,7 @@ jobs:
             '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"drift-ci","version":"0"}}}' \
             '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
             '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
-            | JPACK_CONFIG=projects/judgment-pack-quickstart/jpack.json judgment-pack mcp \
+            | JPACK_CONFIG=projects/judgment-pack-quickstart/jpack.json jpack mcp \
             | grep -q '"experimental_evaluate"'
 
       - name: Match the container user to this runner
@@ -63,9 +63,9 @@ jobs:
           docker compose up -d --wait openhands || docker compose up -d openhands
           docker compose run --rm mcp-seed
           KEY=$(sudo cat state/agent-canvas/api-key.txt)
-          curl -fsS -H "X-Session-API-Key: $KEY" http://localhost:8000/api/settings | grep -q '"judgment-pack"'
+          curl -fsS -H "X-Session-API-Key: $KEY" http://localhost:8000/api/settings | grep -q '"jpack"'
           curl -fsS -X POST -H "X-Session-API-Key: $KEY" -H "Content-Type: application/json" \
             http://localhost:8000/api/mcp/test \
-            -d '{"name":"judgment-pack","server":{"type":"stdio","command":"judgment-pack","args":["mcp"],"env":{"JPACK_CONFIG":"/projects/judgment-pack-quickstart/jpack.json"}}}' \
+            -d '{"name":"jpack","server":{"type":"stdio","command":"jpack","args":["mcp"],"env":{"JPACK_CONFIG":"/projects/judgment-pack-quickstart/jpack.json"}}}' \
             | grep -q '"experimental_evaluate"'
           docker compose down
