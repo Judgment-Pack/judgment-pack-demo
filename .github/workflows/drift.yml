@@ -15,7 +15,7 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     env:
-      JP_VERSION: "0.5.0"
+      JP_VERSION: "0.6.0"
     steps:
       - uses: actions/checkout@v4
 
