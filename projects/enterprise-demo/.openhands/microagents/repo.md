@@ -32,10 +32,15 @@ of answering an evaluation request.
   ```
   # <decision-id> — pack diagram
 
+  **[Open the zoomable viewer](http://localhost:8002/enterprise-demo/diagrams/<decision-id>.html)** — scroll to zoom, drag to pan.
+
   ```mermaid
   <the command's output>
   ```
   ```
+
+  (Better: just run `sh scripts/render-diagram.sh <decision-id>` from the repo root if
+  available — it writes both the .md and the zoomable .html in one go.)
 
   The fence is what makes the VS Code preview and GitHub render it as a diagram; a file
   without it shows as plain text. Tell the user: open the file in the VS Code tab and press
