@@ -10,14 +10,14 @@ paraphrase instead of running tools (a rehearsal on flash-lite hand-drew its own
 The conversation's built-in **Files pane** (right side) is the browse surface. Before the demo:
 `docker compose up -d`, then:
 
-1. **Window 1 — chat**: `localhost:8000/canvas` → New Chat **with the enterprise-demo
+1. **One window — chat**: `localhost:8000/canvas` → New Chat **with the enterprise-demo
    project selected**, so the right-hand **Files pane** shows `packs/`, `requests/`,
-   `evidence/`, `diagrams/` — that pane is the file-browsing surface (no VS Code).
-2. **Window 2 — the pack viewer**: `http://localhost:8002/enterprise-demo/diagrams/` →
-   `vendor-onboarding`, leave it on **Core flow**. Layer toggles, Top-down/Left-right,
-   zoom, pan.
-   *One-window option*: the chat's right panel has a globe (browser) icon — if it accepts
-   a URL, point it at the viewer and skip Window 2 entirely.
+   `evidence/`, `diagrams/` — that pane is the file-browsing surface.
+2. *Optional drawn picture*: the committed `diagrams/*.md` render as flowcharts **on
+   GitHub** — keep `github.com/Judgment-Pack/judgment-pack-demo` →
+   `projects/enterprise-demo/diagrams/vendor-onboarding.md` in a background tab.
+3. Run `./scripts/reset-demo.sh` (clears rehearsal leftovers — Act 2 must start with
+   three packs, not four).
 
 ## 0. Frame (30s, no typing)
 
@@ -38,13 +38,13 @@ suite (14 rows, byte-exact).
 > **Prompt:** Show me the vendor-onboarding pack as a diagram.
 
 Expect: the agent calls the **`get_pack_diagram` tool** (deterministic output, used
-verbatim) and writes `diagrams/vendor-onboarding.md`. Then **switch to the viewer tab** — that is the picture.
-Start on **Core flow** (clean: applicability → exceptions → rules → outcomes → escalation,
-top-to-bottom in the pack's own evaluation order), click **+ Evidence** to reveal what the
-conditions actually read versus merely cite, then **Full** for the unknown-paths. Walk it:
-sanctions hard-stop exception, the committee spend threshold, the `reads` edges into the
-screening evidence. "This diagram is generated from the pack, deterministically — it cannot
-drift from what was reviewed."
+verbatim), pastes the fenced source in chat, and writes `diagrams/vendor-onboarding.md`.
+The chat shows the *source* — own that: *"this is the generated artifact, byte-stable;
+GitHub and any mermaid-capable client draw it as a flowchart."* For the drawn picture, the
+GitHub tab from prep renders it. Walk the structure top-to-bottom in the pack's own
+evaluation order: sanctions hard-stop exception, the committee spend threshold, the `reads`
+edges into the screening evidence. "This diagram is generated from the pack,
+deterministically — it cannot drift from what was reviewed."
 
 ## 3. The clean approval (60s)
 
