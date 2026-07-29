@@ -116,3 +116,12 @@ PATH ([releases](https://github.com/Judgment-Pack/judgment-pack-runtime/releases
   corpus passes inside your container, offline.
 - Versions are pinned in [.env.example](.env.example) and re-verified weekly by
   [drift CI](.github/workflows/drift.yml).
+
+## The enterprise demo
+
+[`projects/enterprise-demo`](projects/enterprise-demo) is the presentable demo: a vendor-onboarding
+decision with a sanctions-screening hard stop (cited to the public OFAC list), an expense policy,
+and the intake-triage pack — each with a byte-exact instance matrix. The MCP server is seeded
+against this project by default. [`DEMO.md`](projects/enterprise-demo/DEMO.md) is the 6-minute
+script: browse, visualize (`diagrams/vendor-onboarding.html` renders offline), the clean approval,
+the forced reject, and the escalation the honesty rule exists for.

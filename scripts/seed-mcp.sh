@@ -2,12 +2,13 @@
 # Register the judgment-pack MCP server in agent-canvas settings via its API.
 # agent-canvas keeps MCP configuration in its settings store (written by the UI
 # or this API), not in a config file, so a fresh instance self-seeds here.
-# Idempotent: an instance that already has the entry is left untouched.
+# Idempotent on content: an instance already pointing at this JPACK_CONFIG is
+# left untouched; one pointing elsewhere is updated in place.
 set -eu
 
 URL="${OPENHANDS_URL:-http://openhands:8000}"
 KEY_FILE="${API_KEY_FILE:-/state/agent-canvas/api-key.txt}"
-JPACK_CONFIG="${JPACK_CONFIG:-/projects/judgment-pack-quickstart/jpack.json}"
+JPACK_CONFIG="${JPACK_CONFIG:-/projects/enterprise-demo/jpack.json}"
 
 echo "seed-mcp: waiting for agent-canvas at $URL ..."
 i=0
@@ -22,8 +23,8 @@ done
 
 KEY="$(cat "$KEY_FILE")"
 
-if curl -fsS -H "X-Session-API-Key: $KEY" "$URL/api/settings" | grep -q '"judgment-pack"'; then
-  echo "seed-mcp: judgment-pack already configured"
+if curl -fsS -H "X-Session-API-Key: $KEY" "$URL/api/settings" | grep -q "\"JPACK_CONFIG\": *\"$JPACK_CONFIG\""; then
+  echo "seed-mcp: judgment-pack already configured for $JPACK_CONFIG"
   exit 0
 fi
 

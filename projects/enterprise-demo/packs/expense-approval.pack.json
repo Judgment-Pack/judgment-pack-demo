@@ -1,0 +1,86 @@
+{
+  "specVersion": "0.2.0-draft",
+  "id": "https://example.invalid/judgment-packs/expense-approval",
+  "version": "0.1.0",
+  "title": "Employee expense approval",
+  "description": "Synthetic expense policy for a fictional company: reimburse small documented expenses, deny prohibited categories, and send everything else to a human approver. Synthetic content for demonstration; it authorizes nothing.",
+  "decision": {
+    "intent": "Decide whether a submitted expense is reimbursed automatically, denied, or reviewed by an approver.",
+    "question": "May this expense be reimbursed without an approver's sign-off?"
+  },
+  "applicability": {
+    "op": "fact",
+    "path": "/expense/kind",
+    "operator": "in",
+    "value": ["meal", "travel", "supplies", "software"]
+  },
+  "evidenceRequirements": [
+    {
+      "id": "itemised-receipt",
+      "description": "An itemised receipt for the expense.",
+      "required": true,
+      "kind": "document"
+    }
+  ],
+  "sources": [
+    {
+      "id": "expense-standard",
+      "title": "Example expense standard",
+      "publisher": "Example Finance Office",
+      "publishedAt": "2026-02-01",
+      "locator": {"kind": "uri", "value": "https://example.invalid/standards/expenses"},
+      "citation": {
+        "location": "Section 2 — Automatic reimbursement",
+        "excerpt": "Documented expenses under the small-expense threshold reimburse automatically; prohibited categories deny; everything else is reviewed."
+      },
+      "rights": "Invented content for demonstration; not an operational policy."
+    }
+  ],
+  "outcomes": [
+    {"id": "reimburse", "label": "Reimburse", "description": "Documented and under the threshold: reimburse automatically."},
+    {"id": "deny", "label": "Deny", "description": "A prohibited category: deny with the reason recorded."},
+    {"id": "review", "label": "Needs review", "description": "Everything else: an approver decides."}
+  ],
+  "rules": [
+    {
+      "id": "deny-prohibited-category",
+      "description": "Deny expenses in prohibited categories.",
+      "when": {
+        "op": "fact",
+        "path": "/expense/category",
+        "operator": "in",
+        "value": ["alcohol", "fines", "gift-cards"]
+      },
+      "outcome": "deny",
+      "onUnknown": "escalate",
+      "sourceRefs": ["expense-standard"]
+    },
+    {
+      "id": "reimburse-small-documented",
+      "description": "Reimburse small documented expenses in allowed categories.",
+      "when": {
+        "op": "all",
+        "conditions": [
+          {"op": "fact", "path": "/expense/amountUsd", "operator": "less-than", "value": "75"},
+          {"op": "not", "condition": {"op": "fact", "path": "/expense/category", "operator": "in", "value": ["alcohol", "fines", "gift-cards"]}},
+          {"op": "evidence-present", "evidenceRequirement": "itemised-receipt"}
+        ]
+      },
+      "outcome": "reimburse",
+      "onUnknown": "ignore",
+      "evidenceRequirementRefs": ["itemised-receipt"],
+      "sourceRefs": ["expense-standard"]
+    }
+  ],
+  "fallbackOutcome": "review",
+  "escalation": {
+    "triggers": ["missing-required-evidence", "unknown", "conflict"],
+    "target": {"kind": "human-role", "name": "Finance approver"},
+    "message": "Escalate to the finance approver with what is missing or unknown."
+  },
+  "metadata": {
+    "authors": ["Judgment Pack demo"],
+    "createdAt": "2026-07-29T00:00:00Z",
+    "license": "Apache-2.0"
+  }
+}

@@ -1,0 +1,207 @@
+{
+  "specVersion": "0.2.0-draft",
+  "id": "https://example.invalid/judgment-packs/vendor-onboarding",
+  "version": "0.1.0",
+  "title": "New vendor onboarding approval",
+  "description": "Synthetic procurement policy for a fictional company: may this vendor be onboarded? Complete submissions with a clear sanctions screen and received tax form approve under the spend threshold; a screening match is a hard stop; large engagements go to the vendor risk committee. Synthetic content for demonstration; it authorizes nothing.",
+  "decision": {
+    "intent": "Decide whether a proposed vendor may be onboarded, returned for more information, or rejected, once the submission, tax documentation, and sanctions screening have been assessed.",
+    "question": "May this vendor be onboarded?"
+  },
+  "applicability": {
+    "op": "fact",
+    "path": "/request/type",
+    "operator": "in",
+    "value": ["new-vendor-onboarding", "vendor-reactivation"]
+  },
+  "evidenceRequirements": [
+    {
+      "id": "sanctions-screening",
+      "description": "A dated record of a denied-party screening of the vendor's exact legal name against the public OFAC sanctions lists.",
+      "required": true,
+      "kind": "attestation"
+    },
+    {
+      "id": "tax-form",
+      "description": "The vendor's completed tax form (W-9 or local equivalent).",
+      "required": true,
+      "kind": "document"
+    },
+    {
+      "id": "business-justification",
+      "description": "The requesting team's written justification for the engagement.",
+      "required": false,
+      "kind": "document"
+    }
+  ],
+  "sources": [
+    {
+      "id": "ofac-sdn",
+      "title": "OFAC Specially Designated Nationals and Blocked Persons List",
+      "publisher": "U.S. Department of the Treasury, Office of Foreign Assets Control",
+      "publishedAt": "2026-01-01",
+      "locator": {
+        "kind": "uri",
+        "value": "https://sanctionslist.ofac.treas.gov/"
+      },
+      "citation": {
+        "location": "Public sanctions list search",
+        "excerpt": "Screening a counterparty against the SDN and consolidated lists is public and free; a match blocks the transaction pending review."
+      },
+      "rights": "Public U.S. government data; cited as the screening source."
+    },
+    {
+      "id": "procurement-standard",
+      "title": "Example vendor onboarding standard",
+      "publisher": "Example Procurement Office",
+      "publishedAt": "2026-02-01",
+      "locator": {
+        "kind": "uri",
+        "value": "https://example.invalid/standards/vendor-onboarding"
+      },
+      "citation": {
+        "location": "Section 4 — Screening, documentation, and thresholds",
+        "excerpt": "A sanctions match is a hard stop. Complete submissions with received tax documentation approve below the committee threshold; at or above it, the vendor risk committee decides."
+      },
+      "rights": "Invented content for demonstration; not an operational policy."
+    }
+  ],
+  "outcomes": [
+    {
+      "id": "approve",
+      "label": "Approve onboarding",
+      "description": "Complete, screened clear, documented, and under the committee threshold: onboard the vendor and record the engagement scope."
+    },
+    {
+      "id": "request-info",
+      "label": "Request more information",
+      "description": "Substantially valid but incomplete or awaiting documentation: return to the requester with the enumerated gaps."
+    },
+    {
+      "id": "reject",
+      "label": "Reject",
+      "description": "A screening match or another criterion more information will not fix: reject with the reason recorded."
+    }
+  ],
+  "rules": [
+    {
+      "id": "request-info-incomplete",
+      "description": "Return the request when the submission is incomplete or the tax form is still pending.",
+      "when": {
+        "op": "any",
+        "conditions": [
+          {
+            "op": "fact",
+            "path": "/submission/completeness",
+            "operator": "equals",
+            "value": "incomplete"
+          },
+          {
+            "op": "fact",
+            "path": "/vendor/taxFormStatus",
+            "operator": "equals",
+            "value": "pending"
+          }
+        ]
+      },
+      "outcome": "request-info",
+      "onUnknown": "escalate",
+      "evidenceRequirementRefs": ["tax-form"],
+      "sourceRefs": ["procurement-standard"],
+      "rationale": "The standard returns incomplete or undocumented requests with enumerated gaps rather than deciding on them."
+    },
+    {
+      "id": "approve-standard",
+      "description": "Approve when the submission is complete, the tax form is received, the sanctions screen is clear and on file, and the annual spend is under the committee threshold.",
+      "when": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "fact",
+            "path": "/submission/completeness",
+            "operator": "equals",
+            "value": "complete"
+          },
+          {
+            "op": "fact",
+            "path": "/vendor/taxFormStatus",
+            "operator": "equals",
+            "value": "received"
+          },
+          {
+            "op": "fact",
+            "path": "/vendor/sanctionsScreening/status",
+            "operator": "equals",
+            "value": "clear"
+          },
+          {
+            "op": "evidence-present",
+            "evidenceRequirement": "sanctions-screening"
+          },
+          {
+            "op": "evidence-present",
+            "evidenceRequirement": "tax-form"
+          },
+          {
+            "op": "fact",
+            "path": "/engagement/annualSpendUsd",
+            "operator": "less-than",
+            "value": "250000"
+          }
+        ]
+      },
+      "outcome": "approve",
+      "onUnknown": "escalate",
+      "evidenceRequirementRefs": ["sanctions-screening", "tax-form"],
+      "sourceRefs": ["procurement-standard", "ofac-sdn"],
+      "rationale": "The standard approves complete, screened, documented engagements below the committee threshold."
+    }
+  ],
+  "exceptions": [
+    {
+      "id": "sanctions-match-hard-stop",
+      "description": "A denied-party screening match is a hard stop whatever else is true: reject, and route to the vendor risk committee.",
+      "when": {
+        "op": "fact",
+        "path": "/vendor/sanctionsScreening/status",
+        "operator": "equals",
+        "value": "match"
+      },
+      "effect": "force-outcome",
+      "outcome": "reject",
+      "onUnknown": "escalate"
+    },
+    {
+      "id": "committee-review-threshold",
+      "description": "At or above the annual spend threshold the vendor risk committee decides, not this pack.",
+      "when": {
+        "op": "fact",
+        "path": "/engagement/annualSpendUsd",
+        "operator": "greater-than-or-equal",
+        "value": "250000"
+      },
+      "effect": "escalate",
+      "onUnknown": "escalate"
+    }
+  ],
+  "fallbackOutcome": "request-info",
+  "escalation": {
+    "triggers": [
+      "not-applicable",
+      "missing-required-evidence",
+      "unknown",
+      "conflict",
+      "no-match"
+    ],
+    "target": {
+      "kind": "human-role",
+      "name": "Vendor risk committee"
+    },
+    "message": "Escalate to the vendor risk committee: state what is unknown or missing, quote the screening record if one exists, and do not onboard while the escalation is open."
+  },
+  "metadata": {
+    "authors": ["Judgment Pack demo"],
+    "createdAt": "2026-07-29T00:00:00Z",
+    "license": "Apache-2.0"
+  }
+}
