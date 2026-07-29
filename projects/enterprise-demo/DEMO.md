@@ -112,8 +112,8 @@ Expect, in order (nudge with the step name if the agent stalls):
 3. Registration: the file lands in `packs/` (watch the Files pane), `jpack.json` grows an
    entry, `packs validate` passes in the terminal.
 4. A small matrix + `packs test` — the new pack has a regression suite minutes after birth.
-5. `sh scripts/render-diagram.sh` — then **refresh the viewer index**: the new pack is in
-   the portfolio, diagrammed, zoomable. Close: *"policy to reviewed artifact, minutes, and
+5. `sh scripts/render-diagram.sh` — the new pack's diagram file joins the portfolio in
+   `diagrams/` (watch the Files pane). Close: *"policy to reviewed artifact, minutes, and
    nothing in that pipeline trusted the model's judgment — only its labor."*
 
 **Act 2 fallbacks**: if the agent writes the file before validating, ask it to validate the

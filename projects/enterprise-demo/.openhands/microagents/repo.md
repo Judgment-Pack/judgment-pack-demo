@@ -38,15 +38,10 @@ of answering an evaluation request.
   ```
   # <decision-id> — pack diagram
 
-  **[Open the zoomable viewer](http://localhost:8002/enterprise-demo/diagrams/<decision-id>.html)** — scroll to zoom, drag to pan.
-
   ```mermaid
-  <the command's output>
+  <the tool's output>
   ```
   ```
-
-  (`sh scripts/render-diagram.sh <decision-id>` from the repo root also regenerates the
-  zoomable viewer page in the same pass.)
 
   The fence is what makes the VS Code preview and GitHub render it as a diagram; a file
   without it shows as plain text. Tell the user: open the file in the VS Code tab and press
@@ -106,7 +101,8 @@ When the user asks to encode a policy as a new pack, work this loop:
    outcome plus an unknown probe — register it, and run `judgment-pack packs test`. Byte-exact
    expectations: run one evaluation first if unsure of the exact disposition bytes.
 6. **Show it**: run `sh scripts/render-diagram.sh` from the repo root (regenerates every
-   pack's viewer page and the index), then tell the user the new pack is in the viewer.
+   pack's `diagrams/<id>.md`), paste the new pack's fenced diagram in your reply, and note
+   the file renders as a flowchart on GitHub.
 
 The pack you produce is the user's, and only validation decides conformance — say so.
 
