@@ -5,8 +5,13 @@ agent as an honest clerk — and escalation, not hallucination, when something i
 
 Stack: OpenHands (agent-canvas) at `localhost:8000/canvas`, this project open, the
 `judgment-pack` MCP server pre-seeded against `enterprise-demo/jpack.json`. Before the demo:
-`docker compose up -d`, open the project, confirm the left file tree shows `packs/`,
-`requests/`, `evidence/`, `diagrams/`.
+`docker compose up -d`, then open TWO browser tabs:
+
+1. the chat: `localhost:8000/canvas`
+2. **the workspace: `./scripts/vscode-url.sh` prints the embedded VS Code URL**, opened on
+   this project — the left-hand file tree (`packs/`, `requests/`, `evidence/`, `diagrams/`)
+   and the mermaid markdown preview live here. Open `diagrams/vendor-onboarding.md`, hit
+   Ctrl+Shift+V, and leave that tab ready.
 
 ## 0. Frame (30s, no typing)
 
