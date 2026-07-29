@@ -17,6 +17,9 @@ services:
       - ./state:/home/openhands/.openhands
     stdin_open: true
     tty: true
+    # Survive host/WSL restarts: the sandbox comes back without a manual
+    # `docker compose up` (state and MCP seeding persist in ./state).
+    restart: unless-stopped
 
   # Oneshot: registers the judgment-pack MCP server in agent-canvas settings on
   # first boot (agent-canvas stores MCP config in its settings API, not a file).
