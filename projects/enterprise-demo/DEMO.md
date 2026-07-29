@@ -9,7 +9,8 @@ Stack: OpenHands (agent-canvas) at `localhost:8000/canvas`, this project open, t
 paraphrase instead of running tools (a rehearsal on flash-lite hand-drew its own diagram).
 The conversation's built-in **Files pane** (right side) is the browse surface; the viewer tab
 is the picture. Before the demo:
-`docker compose up -d`, then:
+`docker compose up -d`, and **run `./scripts/reset-demo.sh`** (clears rehearsal leftovers —
+Act 2 must start with three packs, not four). Then:
 
 1. **Window 1 — chat**: `localhost:8000/canvas` → New Chat **with the enterprise-demo
    project selected**, so the right-hand **Files pane** shows `packs/`, `requests/`,
