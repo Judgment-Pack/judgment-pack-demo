@@ -1,16 +1,15 @@
 # syntax=docker/dockerfile:1
 # The OpenHands agent-canvas GUI with the pinned judgment-pack release baked in.
-# The runtime binary is fetched from the official GitHub release so this image
-# installs judgment-pack exactly the way any user would.
+# The binary comes from the released OCI image (runtime ADR-0013) — the same
+# digest-attested artifact any docker-capable MCP client runs — so this sandbox
+# consumes the distribution channel it exists to demonstrate. Verify it with:
+#   gh attestation verify oci://ghcr.io/judgment-pack/judgment-pack:<version> \
+#     --repo Judgment-Pack/judgment-pack-runtime
 
 ARG AGENT_CANVAS_VERSION=1.6.1
-
-FROM alpine:3.20 AS fetch
 ARG JUDGMENT_PACK_VERSION=0.5.0
-ARG TARGETARCH=amd64
-RUN mkdir -p /out \
- && wget -qO /tmp/jp.tar.gz "https://github.com/Judgment-Pack/judgment-pack-runtime/releases/download/v${JUDGMENT_PACK_VERSION}/judgment-pack_${JUDGMENT_PACK_VERSION}_linux_${TARGETARCH}.tar.gz" \
- && tar -xzf /tmp/jp.tar.gz -C /out judgment-pack jpack
+
+FROM ghcr.io/judgment-pack/judgment-pack:${JUDGMENT_PACK_VERSION} AS runtime
 
 FROM ghcr.io/openhands/agent-canvas:${AGENT_CANVAS_VERSION}
 # Align the container user with the host user so the bind mounts (state/ and
@@ -28,5 +27,7 @@ RUN if [ "$(id -u openhands)" != "${HOST_UID}" ] || [ "$(id -g openhands)" != "$
       usermod -u "${HOST_UID}" -g "${HOST_GID}" openhands; \
       chown -R "${HOST_UID}:${HOST_GID}" /home/openhands /openhands /workspace /projects; \
     fi
-COPY --from=fetch --chmod=755 /out/judgment-pack /out/jpack /usr/local/bin/
+# The image ships one binary; the jpack short alias is the same program.
+COPY --from=runtime --chmod=755 /judgment-pack /usr/local/bin/judgment-pack
+COPY --from=runtime --chmod=755 /judgment-pack /usr/local/bin/jpack
 USER openhands
