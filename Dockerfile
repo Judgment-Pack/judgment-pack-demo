@@ -20,9 +20,9 @@ ARG HOST_UID=1000
 ARG HOST_GID=1000
 USER root
 RUN if [ "$(id -u openhands)" != "${HOST_UID}" ] || [ "$(id -g openhands)" != "${HOST_GID}" ]; then \
-      u="$(getent passwd "${HOST_UID}" | cut -d: -f1)"; \
+      u="$(getent passwd "${HOST_UID}" | cut -d: -f1 || true)"; \
       if [ -n "$u" ] && [ "$u" != "openhands" ]; then usermod -u 61000 "$u"; fi; \
-      g="$(getent group "${HOST_GID}" | cut -d: -f1)"; \
+      g="$(getent group "${HOST_GID}" | cut -d: -f1 || true)"; \
       if [ -n "$g" ] && [ "$g" != "openhands" ]; then groupmod -g 61000 "$g"; fi; \
       groupmod -g "${HOST_GID}" openhands; \
       usermod -u "${HOST_UID}" -g "${HOST_GID}" openhands; \
