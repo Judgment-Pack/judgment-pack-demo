@@ -25,7 +25,11 @@ of answering an evaluation request.
 
 - Inventory: call the `list_packs` MCP tool, or run `judgment-pack packs list`.
 - One pack's full document: `get_pack` with its decision id.
-- **Visualize**: run `judgment-pack packs diagram --id <decision-id>` in the terminal, then
+- **Visualize**: the ONLY diagram is the verbatim output of
+  `judgment-pack packs diagram --id <decision-id>`. NEVER draw, sketch, simplify, or
+  paraphrase a diagram yourself — a hand-drawn graph is your reading of the policy, not the
+  policy, and showing one defeats the reason this project exists. Run the command in the
+  terminal, then
   write `diagrams/<decision-id>.md` in EXACTLY this shape — heading, blank line, fence, the
   command's output verbatim, closing fence:
 
