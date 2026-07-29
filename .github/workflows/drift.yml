@@ -1,0 +1,46 @@
+name: drift
+
+# The demo pins a judgment-pack release and an agent-canvas image; this job
+# re-verifies the pins weekly so rot announces itself instead of greeting users.
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    env:
+      JP_VERSION: "0.4.0"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the pinned judgment-pack release
+        run: |
+          curl -fsSL -o jp.tar.gz "https://github.com/Judgment-Pack/judgment-pack-runtime/releases/download/v${JP_VERSION}/judgment-pack_${JP_VERSION}_linux_amd64.tar.gz"
+          tar -xzf jp.tar.gz judgment-pack jpack
+          sudo install -m 0755 judgment-pack jpack /usr/local/bin/
+          judgment-pack version
+
+      - name: Conformance corpus passes on this machine
+        run: judgment-pack spec test-conformance --quiet
+
+      - name: Seed project validates and its matrix passes
+        working-directory: projects/judgment-pack-quickstart
+        run: |
+          judgment-pack packs validate
+          judgment-pack packs test
+
+      - name: MCP server answers the handshake
+        run: |
+          printf '%s\n%s\n%s\n' \
+            '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"drift-ci","version":"0"}}}' \
+            '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+            '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
+            | JPACK_CONFIG=projects/judgment-pack-quickstart/jpack.json judgment-pack mcp \
+            | grep -q '"experimental_evaluate"'
+
+      - name: Demo image builds
+        run: docker compose build

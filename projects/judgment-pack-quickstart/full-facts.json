@@ -1,0 +1,8 @@
+{
+ "request": {
+  "type": "new-data-pipeline",
+  "completeness": "complete",
+  "appropriateness": "pass",
+  "embargoedInformationToUnauthorizedRecipients": false
+ }
+}

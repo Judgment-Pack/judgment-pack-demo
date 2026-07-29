@@ -1,0 +1,17 @@
+services:
+  openhands:
+    build:
+      context: .
+      args:
+        AGENT_CANVAS_VERSION: ${AGENT_CANVAS_VERSION:-1.6.1}
+        JUDGMENT_PACK_VERSION: ${JUDGMENT_PACK_VERSION:-0.4.0}
+    image: judgment-pack-demo:${JUDGMENT_PACK_VERSION:-0.4.0}
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      # The file browser's root: every folder here is a project the agent can open.
+      - ${PACKS_DIR:-./projects}:/projects
+      # OpenHands state (settings, sessions) plus the pre-seeded MCP config.
+      - ./state:/home/openhands/.openhands
+    stdin_open: true
+    tty: true

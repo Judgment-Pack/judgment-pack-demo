@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "judgment-pack": {
+      "type": "stdio",
+      "command": "judgment-pack",
+      "args": ["mcp"],
+      "env": {
+        "JPACK_CONFIG": "projects/judgment-pack-quickstart/jpack.json"
+      }
+    }
+  }
+}

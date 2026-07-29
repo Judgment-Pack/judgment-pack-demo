@@ -1,0 +1,8 @@
+# Pre-seeded MCP configuration for the OpenHands sandbox: the judgment-pack
+# server over stdio, pointed at the quickstart project. To aim it at another
+# project, change JPACK_CONFIG (or remove env to use the launch directory's
+# jpack.json) and restart the container. Also editable in the UI: Settings > MCP.
+[mcp]
+stdio_servers = [
+    { name = "judgment-pack", command = "judgment-pack", args = ["mcp"], env = { JPACK_CONFIG = "/projects/judgment-pack-quickstart/jpack.json" } }
+]

@@ -1,0 +1,20 @@
+{
+ "configVersion": "1",
+ "packs": {
+  "intake-triage": {
+   "path": "packs/data-request-intake-triage.pack.json",
+   "matrix": "packs/data-request-intake-triage.matrix.json",
+   "description": "May this data request proceed, be clarified, or be declined?",
+   "evidence": {
+    "intake-form": {
+     "source": "sharepoint",
+     "hint": "/sites/ops/intake-forms"
+    },
+    "sponsor-endorsement": {
+     "source": "sharepoint",
+     "hint": "/sites/ops/endorsements"
+    }
+   }
+  }
+ }
+}
