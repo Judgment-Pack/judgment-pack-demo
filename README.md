@@ -118,5 +118,5 @@ PATH ([releases](https://github.com/Judgment-Pack/judgment-pack-runtime/releases
 decision with a sanctions-screening hard stop (cited to the public OFAC list), an expense policy,
 and the intake-triage pack — each with a byte-exact instance matrix. The MCP server is seeded
 against this project by default. [`DEMO.md`](projects/enterprise-demo/DEMO.md) is the 6-minute
-script: browse, visualize (`diagrams/vendor-onboarding.html` renders offline), the clean approval,
+script: browse, present the pack as a grounded table, the clean approval,
 the forced reject, and the escalation the honesty rule exists for.

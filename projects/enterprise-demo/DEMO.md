@@ -12,11 +12,8 @@ The conversation's built-in **Files pane** (right side) is the browse surface. B
 
 1. **One window — chat**: `localhost:8000/canvas` → New Chat **with the enterprise-demo
    project selected**, so the right-hand **Files pane** shows `packs/`, `requests/`,
-   `evidence/`, `diagrams/` — that pane is the file-browsing surface.
-2. *Optional drawn picture*: the committed `diagrams/*.md` render as flowcharts **on
-   GitHub** — keep `github.com/Judgment-Pack/judgment-pack-demo` →
-   `projects/enterprise-demo/diagrams/vendor-onboarding.md` in a background tab.
-3. Run `./scripts/reset-demo.sh` (clears rehearsal leftovers — Act 2 must start with
+   `evidence/` — that pane is the file-browsing surface.
+2. Run `./scripts/reset-demo.sh` (clears rehearsal leftovers — Act 2 must start with
    three packs, not four).
 
 ## 0. Frame (30s, no typing)
@@ -33,18 +30,17 @@ Expect: the agent calls `list_packs` and lists `vendor-onboarding`, `expense-app
 `intake-triage` with their questions. Mention the matrices: every pack ships its regression
 suite (14 rows, byte-exact).
 
-## 2. Visualize the deep pack (45s)
+## 2. Present the deep pack (45s)
 
-> **Prompt:** Show me the vendor-onboarding pack as a diagram.
+> **Prompt:** Show me the vendor-onboarding pack: every outcome, the conditions that
+> reach it, and what escalates to whom.
 
-Expect: the agent calls the **`get_pack_diagram` tool** (deterministic output, used
-verbatim), pastes the fenced source in chat, and writes `diagrams/vendor-onboarding.md`.
-The chat shows the *source* — own that: *"this is the generated artifact, byte-stable;
-GitHub and any mermaid-capable client draw it as a flowchart."* For the drawn picture, the
-GitHub tab from prep renders it. Walk the structure top-to-bottom in the pack's own
-evaluation order: sanctions hard-stop exception, the committee spend threshold, the `reads`
-edges into the screening evidence. "This diagram is generated from the pack,
-deterministically — it cannot drift from what was reviewed."
+Expect: the agent reads the document (`get_pack`) and renders a **markdown table** in chat
+— outcomes × conditions, the sanctions hard stop, the committee threshold, the escalation
+target — labeled as its reading of the pack, with what the view omits stated. The table
+renders natively in the chat, and every element traces to a document member. Say: *"the
+model chose the presentation; the pack supplied every fact in it — and the file in the
+Files pane is the only authority."*
 
 ## 3. The clean approval (60s)
 
@@ -111,9 +107,9 @@ Expect, in order (nudge with the step name if the agent stalls):
 3. Registration: the file lands in `packs/` (watch the Files pane), `jpack.json` grows an
    entry, `packs validate` passes in the terminal.
 4. A small matrix + `packs test` — the new pack has a regression suite minutes after birth.
-5. `sh scripts/render-diagram.sh` — the new pack's diagram file joins the portfolio in
-   `diagrams/` (watch the Files pane). Close: *"policy to reviewed artifact, minutes, and
-   nothing in that pipeline trusted the model's judgment — only its labor."*
+5. Ask for the new pack as a table — same presentation, grounded in the file it just
+   wrote. Close: *"policy to reviewed artifact, minutes, and nothing in that pipeline
+   trusted the model's judgment — only its labor."*
 
 **Act 2 fallbacks**: if the agent writes the file before validating, ask it to validate the
 document with the validate tool now and fix what it reports. If matrix expectations
@@ -128,8 +124,7 @@ already the story.
 - Agent invents a screening status in step 5 → "Where is the screening record? Report what
   you cannot source as unknown." (The pack still protects you: a guessed `clear` is the one
   thing the honesty rule exists to prevent — restate it.)
-- Chat never renders mermaid (agent-canvas limitation) — the fence is the verbatim
-  artifact; the committed `diagrams/*.md` render as flowcharts on GitHub when a drawn
-  picture is wanted.
+- Presentation looks wrong or invented → "Every row must trace to a member of the pack
+  document — rebuild the table from get_pack and state what it omits."
 - Model/API hiccup → `packs test` in the terminal shows the 14-row byte-exact suite as the
   determinism proof without any model.

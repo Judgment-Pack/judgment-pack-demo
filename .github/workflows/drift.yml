@@ -48,7 +48,7 @@ jobs:
             '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
             '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
             | JPACK_CONFIG=projects/judgment-pack-quickstart/jpack.json judgment-pack mcp \
-            | grep -q '"get_pack_diagram".*"experimental_evaluate"\|"experimental_evaluate".*"get_pack_diagram"'
+            | grep -q '"experimental_evaluate"'
 
       - name: Match the container user to this runner
         run: |
@@ -67,7 +67,5 @@ jobs:
           curl -fsS -X POST -H "X-Session-API-Key: $KEY" -H "Content-Type: application/json" \
             http://localhost:8000/api/mcp/test \
             -d '{"name":"judgment-pack","server":{"type":"stdio","command":"judgment-pack","args":["mcp"],"env":{"JPACK_CONFIG":"/projects/judgment-pack-quickstart/jpack.json"}}}' \
-            > /tmp/mcp-test.json
-          grep -q '"experimental_evaluate"' /tmp/mcp-test.json
-          grep -q '"get_pack_diagram"' /tmp/mcp-test.json
+            | grep -q '"experimental_evaluate"'
           docker compose down
