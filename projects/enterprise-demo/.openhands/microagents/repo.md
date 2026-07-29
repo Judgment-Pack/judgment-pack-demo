@@ -8,7 +8,7 @@ you invents facts.
 
 Layout: `jpack.json` (the project's packs), `packs/` (pack documents + instance matrices),
 `requests/` (incoming vendor/expense requests), `evidence/` (saved screening and document
-records), `diagrams/` (rendered pack diagrams).
+records).
 
 ## The one rule that outranks everything
 
@@ -20,34 +20,17 @@ fill holes with plausible values. `annualSpendUsd` and every other amount is a d
 
 ## Showing the packs
 
-Do these **only when the user asks to see, show, browse, or diagram a pack** — never as part
+Do these **only when the user asks to see, show, or browse a pack** — never as part
 of answering an evaluation request.
 
 - Inventory: call the `list_packs` MCP tool, or run `judgment-pack packs list`.
 - One pack's full document: `get_pack` with its decision id.
-- **Visualize**: call the **`get_pack_diagram` MCP tool** — its output is the pack's
-  diagram, deterministic and reviewable, and you use it verbatim. Never present a diagram
-  you drew yourself AS the pack: a hand-drawn graph is your reading of the policy, not the
-  policy. If the user asks for a custom or simplified view, you may derive one — start from
-  the tool's output, label it plainly as "my simplified reading, not the pack", and point at
-  the canonical diagram file. (Terminal fallback if the tool is unavailable:
-  `judgment-pack packs diagram --id <decision-id>`.) After calling the tool, write
-  write `diagrams/<decision-id>.md` in EXACTLY this shape — heading, blank line, fence, the
-  command's output verbatim, closing fence:
-
-  ```
-  # <decision-id> — pack diagram
-
-  ```mermaid
-  <the tool's output>
-  ```
-  ```
-
-  The fence is what makes GitHub render the file as a diagram; a file without it shows as
-  plain text. Paste the fenced diagram in your chat reply — clients that render mermaid draw
-  it inline, and in every client the text is the verbatim artifact. Node meanings: member nodes quote the pack; `unresolved (unknown)` /
-  `not-applicable` / `no rule fired` are resolution states; `reads` edges are evidence a
-  condition actually tests, `cites` edges are citations.
+- **Present**: when the user asks to see, show, or understand a pack, build the lightest
+  faithful representation for their question, grounded ONLY in the document from `get_pack`:
+  a markdown table of outcomes and the conditions that reach them, a list of the escalation
+  paths, or a short prose walkthrough quoting rules. Every element must trace to a member of
+  the document; say what your view omits (for example, the onUnknown behavior); label it as
+  your reading of the pack, never as the pack itself.
 
 ## Evaluating a request
 
@@ -106,9 +89,8 @@ When the user asks to encode a policy as a new pack, work this loop:
    `evidenceRequirementRefs` is a citation the evaluator never reads (removing it changes
    nothing), and a `missing-required-evidence` reason means the ROW's evidenceAvailability
    omitted required evidence, not that the pack is broken.
-6. **Show it**: run `sh scripts/render-diagram.sh` from the repo root (regenerates every
-   pack's `diagrams/<id>.md`), paste the new pack's fenced diagram in your reply, and note
-   the file renders as a flowchart on GitHub.
+6. **Show it**: present the new pack the same way as any other — a table of its outcomes
+   and conditions, labeled as your reading, grounded in the document you just wrote.
 
 The pack you produce is the user's, and only validation decides conformance — say so.
 
