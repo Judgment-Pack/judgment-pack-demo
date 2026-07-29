@@ -9,8 +9,9 @@ URL="${OPENHANDS_URL:-http://openhands:8000}"
 KEY_FILE="${API_KEY_FILE:-/state/agent-canvas/api-key.txt}"
 JPACK_CONFIG="${JPACK_CONFIG:-/projects/judgment-pack-quickstart/jpack.json}"
 
+echo "seed-mcp: waiting for agent-canvas at $URL ..."
 i=0
-until curl -fsS -o /dev/null "$URL/health" && [ -s "$KEY_FILE" ]; do
+until curl -fs -o /dev/null "$URL/health" && [ -s "$KEY_FILE" ]; do
   i=$((i + 1))
   if [ "$i" -gt 90 ]; then
     echo "seed-mcp: server or api key not ready after 180s" >&2
