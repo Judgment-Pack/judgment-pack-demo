@@ -26,9 +26,12 @@ suite (14 rows, byte-exact).
 
 > **Prompt:** Show me the vendor-onboarding pack as a diagram.
 
-Expect: the agent runs `judgment-pack packs diagram --id vendor-onboarding`, writes
-`diagrams/vendor-onboarding.md`, and pastes the mermaid fence in chat. **Open
-`diagrams/vendor-onboarding.html` in a browser** (it renders offline) — walk the flow:
+Expect: the agent runs `judgment-pack packs diagram --id vendor-onboarding` and writes
+`diagrams/vendor-onboarding.md`. The chat shows the fence as text (agent-canvas renders no
+mermaid) — the picture lives one click away: **open the conversation's VS Code tab, click
+`diagrams/vendor-onboarding.md` in the file tree, and open the markdown preview** (the
+mermaid extension is pre-installed) — or open `diagrams/vendor-onboarding.html` in any
+browser (renders offline). Walk the flow:
 sanctions hard-stop exception, the committee spend threshold, the `reads` edges into the
 screening evidence. "This diagram is generated from the pack, deterministically — it cannot
 drift from what was reviewed."
@@ -83,7 +86,7 @@ human decides above the threshold."
 - Agent invents a screening status in step 5 → "Where is the screening record? Report what
   you cannot source as unknown." (The pack still protects you: a guessed `clear` is the one
   thing the honesty rule exists to prevent — restate it.)
-- Diagram fence doesn't render in chat → the pre-built `diagrams/vendor-onboarding.html` is
-  the visual; it needs no network.
+- Chat never renders mermaid (agent-canvas limitation) — the visual is the VS Code markdown
+  preview or the pre-built `diagrams/vendor-onboarding.html`; both work offline.
 - Model/API hiccup → `packs test` in the terminal shows the 14-row byte-exact suite as the
   determinism proof without any model.
