@@ -18,6 +18,26 @@ check is `unknown`. The packs are built to escalate on unknowns; that only works
 fill holes with plausible values. `annualSpendUsd` and every other amount is a decimal STRING
 (`"84000"`); a JSON number evaluates as unknown by design.
 
+## The shape of a facts document
+
+The `jpack.json` fact hints are keyed by JSON Pointer (`/engagement/annualSpendUsd`) so you
+know **where to look**; the facts document you build is the **nested object those pointers
+descend into**, never a flat object with pointer-named members. Worked, for vendor-onboarding:
+
+```json
+{
+  "request": { "type": "new-vendor-onboarding" },
+  "submission": { "completeness": "complete" },
+  "vendor": { "taxFormStatus": "received", "sanctionsScreening": { "status": "clear" } },
+  "engagement": { "annualSpendUsd": "84000" }
+}
+```
+
+Writing `{"/request/type": "new-vendor-onboarding"}` instead is the one mistake that looks
+right and resolves nothing the pack reads: every condition evaluates unknown, and the
+disposition arrives unresolved with a trace full of unknowns. If that is what you see, check
+the facts document's shape before anything else.
+
 ## Showing the packs
 
 Do these **only when the user asks to see, show, or browse a pack** — never as part

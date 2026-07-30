@@ -200,3 +200,6 @@ loudly is the demo.
   document — rebuild the table from get_pack and state what it omits."
 - Model/API hiccup → `packs test` in the terminal shows the 18-row byte-exact suite as the
   determinism proof without any model.
+- Everything comes back unresolved with every condition unknown → the facts document is
+  probably flat pointer-named members instead of the nested object the pointers descend into;
+  the worked shape is in `.openhands/microagents/repo.md`.
