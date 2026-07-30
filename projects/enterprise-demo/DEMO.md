@@ -14,7 +14,7 @@ The conversation's built-in **Files pane** (right side) is the browse surface. B
    project selected**, so the right-hand **Files pane** shows `packs/`, `requests/`,
    `evidence/` — that pane is the file-browsing surface.
 2. Run `./scripts/reset-demo.sh` (clears rehearsal leftovers — Act 2 must start with
-   three packs, not four).
+   four packs, not five).
 
 ## 0. Frame (30s, no typing)
 
@@ -26,9 +26,9 @@ the runtime evaluates the pack deterministically, same bytes on any machine."
 
 > **Prompt:** What judgment packs does this project hold? One line each.
 
-Expect: the agent calls `list_packs` and lists `vendor-onboarding`, `expense-approval`,
-`intake-triage` with their questions. Mention the matrices: every pack ships its regression
-suite (14 rows, byte-exact).
+Expect: the agent calls `list_packs` and lists `vendor-onboarding`, `sanctions-screening`,
+`expense-approval`, `intake-triage` with their questions. Mention the matrices: every pack
+ships its regression suite (18 rows, byte-exact).
 
 ## 2. Present the deep pack (45s)
 
@@ -173,6 +173,12 @@ evidence — so onboarding consumes a decision, not a transcribed value.
      onboarding escalates through its own declared rules, and the composite aggregates BOTH
      requested handoffs (screening → Compliance, onboarding → Vendor risk committee). Nothing
      guessed, everything attributed.
+   - `jpack experimental graph test graphs/vendor-onboarding.graph.json --rows
+     graphs/vendor-onboarding.rows.json` — the graph's own byte-exact suite: the three stories
+     above plus a committee-threshold row (screening clear, spend 600000, everything documented
+     — escalation by policy, not by ignorance; `graphs/inputs-committee-threshold.json` runs it
+     by hand if asked). The same determinism proof `packs test` gives, one level up, and it
+     needs no model at all.
 3. Ask the agent to narrate the composite from the payload: the per-node dispositions, the
    feeds (`injected` vs `not injected`), the handoffs, and the §3.5 line — the payload asserts
    nothing about the wisdom of acting.
@@ -191,5 +197,5 @@ loudly is the demo.
   thing the honesty rule exists to prevent — restate it.)
 - Presentation looks wrong or invented → "Every row must trace to a member of the pack
   document — rebuild the table from get_pack and state what it omits."
-- Model/API hiccup → `packs test` in the terminal shows the 14-row byte-exact suite as the
+- Model/API hiccup → `packs test` in the terminal shows the 18-row byte-exact suite as the
   determinism proof without any model.

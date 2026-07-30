@@ -7,7 +7,7 @@
 #     --repo Judgment-Pack/judgment-pack-runtime
 
 ARG AGENT_CANVAS_VERSION=1.6.1
-ARG JUDGMENT_PACK_VERSION=0.7.0
+ARG JUDGMENT_PACK_VERSION=0.9.0
 
 FROM ghcr.io/judgment-pack/judgment-pack:${JUDGMENT_PACK_VERSION} AS runtime
 
