@@ -14,10 +14,12 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    env:
-      JP_VERSION: "0.7.0"
     steps:
       - uses: actions/checkout@v4
+
+      - name: Derive the pinned runtime version from .env.example
+        run: |
+          grep '^JUDGMENT_PACK_VERSION=' .env.example | sed 's/^JUDGMENT_PACK_VERSION=/JP_VERSION=/' >> "$GITHUB_ENV"
 
       - name: Install the pinned judgment-pack release
         run: |
@@ -40,6 +42,12 @@ jobs:
         run: |
           jpack packs validate
           jpack packs test
+
+      - name: Enterprise demo graph validates and its rows pass
+        working-directory: projects/enterprise-demo
+        run: |
+          jpack experimental graph validate graphs/vendor-onboarding.graph.json
+          jpack experimental graph test graphs/vendor-onboarding.graph.json --rows graphs/vendor-onboarding.rows.json
 
       - name: MCP server answers the handshake
         run: |

@@ -1,0 +1,31 @@
+{
+  "screening": {
+    "facts": {
+      "screening": {
+        "matchCount": "0"
+      }
+    },
+    "evidence": {
+      "screening-record": "present"
+    }
+  },
+  "onboarding": {
+    "facts": {
+      "request": {
+        "type": "new-vendor-onboarding"
+      },
+      "submission": {
+        "completeness": "complete"
+      },
+      "vendor": {
+        "taxFormStatus": "received"
+      },
+      "engagement": {
+        "annualSpendUsd": "600000"
+      }
+    },
+    "evidence": {
+      "tax-form": "present"
+    }
+  }
+}
