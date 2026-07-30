@@ -173,12 +173,13 @@ evidence — so onboarding consumes a decision, not a transcribed value.
      onboarding escalates through its own declared rules, and the composite aggregates BOTH
      requested handoffs (screening → Compliance, onboarding → Vendor risk committee). Nothing
      guessed, everything attributed.
-   - `jpack experimental graph test graphs/vendor-onboarding.graph.json --rows
-     graphs/vendor-onboarding.rows.json` — the graph's own byte-exact suite: the three stories
-     above plus a committee-threshold row (screening clear, spend 600000, everything documented
-     — escalation by policy, not by ignorance; `graphs/inputs-committee-threshold.json` runs it
-     by hand if asked). The same determinism proof `packs test` gives, one level up, and it
-     needs no model at all.
+   - `jpack experimental graph test` — no arguments: the project declares its graph and rows in
+     `jpack.json` (configVersion 2), and the walk runs the declared suite exactly as `packs
+     test` runs the matrices. Four byte-exact rows: the three stories above plus a
+     committee-threshold row (screening clear, spend 600000, everything documented — escalation
+     by policy, not by ignorance; `graphs/inputs-committee-threshold.json` runs it by hand if
+     asked). The same determinism proof `packs test` gives, one level up, and it needs no model
+     at all.
 3. Ask the agent to narrate the composite from the payload: the per-node dispositions, the
    feeds (`injected` vs `not injected`), the handoffs, and the §3.5 line — the payload asserts
    nothing about the wisdom of acting.

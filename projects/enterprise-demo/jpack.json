@@ -1,5 +1,5 @@
 {
- "configVersion": "1",
+ "configVersion": "2",
  "packs": {
   "vendor-onboarding": {
    "path": "packs/vendor-onboarding.pack.json",
@@ -73,6 +73,13 @@
     "intake-form": {"source": "sharepoint", "hint": "/sites/ops/intake-forms"},
     "sponsor-endorsement": {"source": "sharepoint", "hint": "/sites/ops/endorsements"}
    }
+  }
+ },
+ "graphs": {
+  "vendor-onboarding-flow": {
+   "path": "graphs/vendor-onboarding.graph.json",
+   "rows": "graphs/vendor-onboarding.rows.json",
+   "description": "The sanctions screening decision feeds vendor onboarding: outcome as fact, resolution state as evidence."
   }
  }
 }

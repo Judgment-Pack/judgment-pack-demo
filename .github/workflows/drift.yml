@@ -43,11 +43,11 @@ jobs:
           jpack packs validate
           jpack packs test
 
-      - name: Enterprise demo graph validates and its rows pass
+      - name: Enterprise demo graphs validate and their rows pass
         working-directory: projects/enterprise-demo
         run: |
-          jpack experimental graph validate graphs/vendor-onboarding.graph.json
-          jpack experimental graph test graphs/vendor-onboarding.graph.json --rows graphs/vendor-onboarding.rows.json
+          jpack experimental graph validate
+          jpack experimental graph test
 
       - name: MCP server answers the handshake
         run: |
