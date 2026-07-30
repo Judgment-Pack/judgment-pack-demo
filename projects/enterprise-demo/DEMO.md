@@ -151,7 +151,7 @@ already the story.
 
 Act 1 bridges the screening decision into vendor onboarding by hand: someone records
 `/vendor/sanctionsScreening/status` as a fact. The runtime's experimental composition surface
-(its ADR-0015, shipped in 0.8.0, which this demo pins) declares that seam instead:
+(its ADR-0015; the pinned runtime carries it) declares that seam instead:
 `graphs/vendor-onboarding.graph.json` makes `sanctions-screening` its own decision node whose
 outcome lands at exactly that pointer — and whose resolution state is the `sanctions-screening`
 evidence — so onboarding consumes a decision, not a transcribed value.
