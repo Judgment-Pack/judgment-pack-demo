@@ -147,22 +147,17 @@ mismatch on bytes, have it run one evaluation and copy the actual disposition �
 are diffs, not mysteries. If time is short, stop after step 3: validated and registered is
 already the story.
 
-## Act 3 (preview) — the declared graph (requires runtime 0.8.0+)
+## Act 3 — the declared graph (~3 min)
 
 Act 1 bridges the screening decision into vendor onboarding by hand: someone records
-`/vendor/sanctionsScreening/status` as a fact. The runtime's next release carries an
-experimental composition surface (its ADR-0015) that declares that seam instead:
+`/vendor/sanctionsScreening/status` as a fact. The runtime's experimental composition surface
+(its ADR-0015, shipped in 0.8.0, which this demo pins) declares that seam instead:
 `graphs/vendor-onboarding.graph.json` makes `sanctions-screening` its own decision node whose
 outcome lands at exactly that pointer — and whose resolution state is the `sanctions-screening`
 evidence — so onboarding consumes a decision, not a transcribed value.
 
-Everything in this act except the `graphs/` files already works on the pinned runtime: the
-`sanctions-screening` pack and matrix run under `packs validate` and `packs test` today. The
-graph commands need the release that ships them; until `JUDGMENT_PACK_VERSION` is bumped to it,
-the files are inert data and this act is a preview.
-
-1. Bump `JUDGMENT_PACK_VERSION` (compose env) to a release carrying `experimental graph`,
-   rebuild, and reset as usual.
+1. Rebuild against the pinned runtime and reset as usual (the compose default is already a
+   release carrying `experimental graph`).
 2. In the sandbox terminal (or ask the agent to run these):
    - `jpack experimental graph validate graphs/vendor-onboarding.graph.json` — every reference
      checks out against jpack.json and the packs.
