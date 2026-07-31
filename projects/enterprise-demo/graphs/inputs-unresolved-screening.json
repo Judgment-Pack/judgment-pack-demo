@@ -1,15 +1,27 @@
 {
   "screening": {
     "facts": {},
-    "evidence": { "screening-record": "present" }
+    "evidence": {
+      "screening-record": "present"
+    }
   },
   "onboarding": {
     "facts": {
-      "request": { "type": "new-vendor-onboarding" },
-      "submission": { "completeness": "complete" },
-      "vendor": { "taxFormStatus": "received" },
-      "engagement": { "annualSpendUsd": "84000" }
+      "request": {
+        "type": "new-vendor-onboarding"
+      },
+      "submission": {
+        "completeness": "complete"
+      },
+      "vendor": {
+        "taxFormStatus": "received"
+      },
+      "engagement": {
+        "annualSpendUsd": "84000"
+      }
     },
-    "evidence": { "tax-form": "present" }
+    "evidence": {
+      "tax-form": "present"
+    }
   }
 }
