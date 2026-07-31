@@ -5,44 +5,104 @@
       "id": "clear-approves",
       "inputs": {
         "screening": {
-          "facts": { "screening": { "matchCount": "0" } },
-          "evidence": { "screening-record": "present" }
+          "facts": {
+            "screening": {
+              "matchCount": "0"
+            }
+          },
+          "evidence": {
+            "screening-record": "present"
+          }
         },
         "onboarding": {
           "facts": {
-            "request": { "type": "new-vendor-onboarding" },
-            "submission": { "completeness": "complete" },
-            "vendor": { "taxFormStatus": "received" },
-            "engagement": { "annualSpendUsd": "84000" }
+            "request": {
+              "type": "new-vendor-onboarding"
+            },
+            "submission": {
+              "completeness": "complete"
+            },
+            "vendor": {
+              "taxFormStatus": "received"
+            },
+            "engagement": {
+              "annualSpendUsd": "84000"
+            }
           },
-          "evidence": { "tax-form": "present" }
+          "evidence": {
+            "tax-form": "present"
+          }
         }
       },
-      "expectedDisposition": { "kind": "outcome", "outcomeId": "approve", "reasons": [], "handoff": { "state": "none" } },
+      "expectedDisposition": {
+        "kind": "outcome",
+        "outcomeId": "approve",
+        "reasons": [],
+        "handoff": {
+          "state": "none"
+        }
+      },
       "expectedNodes": {
-        "screening": { "kind": "outcome", "outcomeId": "clear", "reasons": [], "handoff": { "state": "none" } }
+        "screening": {
+          "kind": "outcome",
+          "outcomeId": "clear",
+          "reasons": [],
+          "handoff": {
+            "state": "none"
+          }
+        }
       }
     },
     {
       "id": "match-rejects",
       "inputs": {
         "screening": {
-          "facts": { "screening": { "matchCount": "2" } },
-          "evidence": { "screening-record": "present" }
+          "facts": {
+            "screening": {
+              "matchCount": "2"
+            }
+          },
+          "evidence": {
+            "screening-record": "present"
+          }
         },
         "onboarding": {
           "facts": {
-            "request": { "type": "new-vendor-onboarding" },
-            "submission": { "completeness": "complete" },
-            "vendor": { "taxFormStatus": "received" },
-            "engagement": { "annualSpendUsd": "84000" }
+            "request": {
+              "type": "new-vendor-onboarding"
+            },
+            "submission": {
+              "completeness": "complete"
+            },
+            "vendor": {
+              "taxFormStatus": "received"
+            },
+            "engagement": {
+              "annualSpendUsd": "120000"
+            }
           },
-          "evidence": { "tax-form": "present" }
+          "evidence": {
+            "tax-form": "present"
+          }
         }
       },
-      "expectedDisposition": { "kind": "outcome", "outcomeId": "reject", "reasons": [], "handoff": { "state": "none" } },
+      "expectedDisposition": {
+        "kind": "outcome",
+        "outcomeId": "reject",
+        "reasons": [],
+        "handoff": {
+          "state": "none"
+        }
+      },
       "expectedNodes": {
-        "screening": { "kind": "outcome", "outcomeId": "match", "reasons": [], "handoff": { "state": "none" } }
+        "screening": {
+          "kind": "outcome",
+          "outcomeId": "match",
+          "reasons": [],
+          "handoff": {
+            "state": "none"
+          }
+        }
       }
     },
     {
@@ -50,44 +110,123 @@
       "inputs": {
         "screening": {
           "facts": {},
-          "evidence": { "screening-record": "present" }
+          "evidence": {
+            "screening-record": "present"
+          }
         },
         "onboarding": {
           "facts": {
-            "request": { "type": "new-vendor-onboarding" },
-            "submission": { "completeness": "complete" },
-            "vendor": { "taxFormStatus": "received" },
-            "engagement": { "annualSpendUsd": "84000" }
+            "request": {
+              "type": "new-vendor-onboarding"
+            },
+            "submission": {
+              "completeness": "complete"
+            },
+            "vendor": {
+              "taxFormStatus": "received"
+            },
+            "engagement": {
+              "annualSpendUsd": "84000"
+            }
           },
-          "evidence": { "tax-form": "present" }
+          "evidence": {
+            "tax-form": "present"
+          }
         }
       },
-      "expectedDisposition": { "kind": "unresolved", "reasons": ["unknown"], "handoff": { "state": "requested", "triggeredBy": ["unknown"] } },
+      "expectedDisposition": {
+        "kind": "unresolved",
+        "reasons": [
+          "unknown"
+        ],
+        "handoff": {
+          "state": "requested",
+          "triggeredBy": [
+            "unknown"
+          ]
+        }
+      },
       "expectedNodes": {
-        "screening": { "kind": "unresolved", "reasons": ["unknown"], "handoff": { "state": "requested", "triggeredBy": ["unknown"] } },
-        "onboarding": { "kind": "unresolved", "reasons": ["unknown"], "handoff": { "state": "requested", "triggeredBy": ["unknown"] } }
+        "screening": {
+          "kind": "unresolved",
+          "reasons": [
+            "unknown"
+          ],
+          "handoff": {
+            "state": "requested",
+            "triggeredBy": [
+              "unknown"
+            ]
+          }
+        },
+        "onboarding": {
+          "kind": "unresolved",
+          "reasons": [
+            "unknown"
+          ],
+          "handoff": {
+            "state": "requested",
+            "triggeredBy": [
+              "unknown"
+            ]
+          }
+        }
       }
     },
     {
       "id": "committee-threshold-escalates",
       "inputs": {
         "screening": {
-          "facts": { "screening": { "matchCount": "0" } },
-          "evidence": { "screening-record": "present" }
+          "facts": {
+            "screening": {
+              "matchCount": "0"
+            }
+          },
+          "evidence": {
+            "screening-record": "present"
+          }
         },
         "onboarding": {
           "facts": {
-            "request": { "type": "new-vendor-onboarding" },
-            "submission": { "completeness": "complete" },
-            "vendor": { "taxFormStatus": "received" },
-            "engagement": { "annualSpendUsd": "600000" }
+            "request": {
+              "type": "new-vendor-onboarding"
+            },
+            "submission": {
+              "completeness": "complete"
+            },
+            "vendor": {
+              "taxFormStatus": "received"
+            },
+            "engagement": {
+              "annualSpendUsd": "600000"
+            }
           },
-          "evidence": { "tax-form": "present" }
+          "evidence": {
+            "tax-form": "present"
+          }
         }
       },
-      "expectedDisposition": { "kind": "unresolved", "reasons": ["exception-escalation"], "handoff": { "state": "requested", "triggeredBy": ["exception-escalation"] } },
+      "expectedDisposition": {
+        "kind": "unresolved",
+        "reasons": [
+          "exception-escalation"
+        ],
+        "handoff": {
+          "state": "requested",
+          "triggeredBy": [
+            "exception-escalation"
+          ]
+        }
+      },
       "expectedNodes": {
-        "screening": { "kind": "outcome", "outcomeId": "clear", "reasons": [], "handoff": { "state": "none" } }
+        "screening": {
+          "kind": "outcome",
+          "outcomeId": "clear",
+          "reasons": [],
+          "handoff": {
+            "state": "none"
+          }
+        }
       }
     }
   ]
