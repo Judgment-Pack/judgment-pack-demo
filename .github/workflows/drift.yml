@@ -43,6 +43,13 @@ jobs:
           jpack packs validate
           jpack packs test
 
+      - name: Hand-run graph inputs match the suite they illustrate
+        # graphs/inputs-*.json exist for DEMO.md Act 3, which runs each scenario by
+        # hand; the suite inlines its own copy because the runtime's graph matrix
+        # format cannot reference a file. Nothing linked the two, so a fixture
+        # corrected in one place left the other stale with every check still green.
+        run: python3 scripts/check-graph-inputs.py
+
       - name: Enterprise demo graphs validate and their rows pass
         working-directory: projects/enterprise-demo
         run: |
