@@ -1,13 +1,17 @@
-Encode ONE policy decision as a Judgment Pack (JPS 0.1.0-draft), working in a
+Encode ONE policy decision as a Judgment Pack (declare specVersion 0.2.0-draft,
+the one version the experimental evaluator admits), working in a
 validate-and-fix loop against the judgment-pack tools.
 
 Ask for the policy text or decision description if you do not already hold it.
 
 Work in this order:
 
-1. ORIENT. Call get_schema for the format reference and list_examples for the bundled valid
-   fixtures; fetch the one closest to your decision with get_example and use its SHAPE (not its
-   content) as scaffolding. Fixtures are version-pinned conformance cases, not templates.
+1. ORIENT. Call get_schema with spec_version "0.2.0-draft" for the format reference -- the
+   tool's no-argument default serves 0.1.0-draft, which is not the version you are declaring.
+   Then list_examples for the bundled valid fixtures; fetch the one closest to your decision
+   with get_example and use its SHAPE (not its content) as scaffolding. Fixtures are
+   version-pinned 0.1.0-draft conformance cases, not templates: the two drafts share one
+   document format, so the only member your pack declares differently is specVersion.
 
 2. SCOPE. One pack = one decision ("may X be done?"), with the outcomes the policy itself names.
    Agent procedure ("confirm before acting") is not a decision; leave it out. If the policy names a
@@ -40,7 +44,10 @@ Work in this order:
 
 6. EVIDENCE. evidenceRequirements with required: true block every evaluation that arrives without
    an evidence document -- use required: true only for evidence the decision truly cannot proceed
-   without, and remember callers may not supply an evidence document at all.
+   without, and remember callers may not supply an evidence document at all. A rule's
+   evidenceRequirementRefs member is a CITATION the evaluator never reads: adding or removing it
+   changes no evaluation, so never edit it expecting behavior to change -- evidence is enforced by
+   required: true or by an evidence-present condition, nothing else.
 
 7. LOOP. validate the draft; every diagnostic names its location and the fix; repair and repeat to
    exit 0. Then evaluate against 2-3 realistic facts documents and check the dispositions match

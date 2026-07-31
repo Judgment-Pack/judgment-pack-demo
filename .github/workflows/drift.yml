@@ -58,6 +58,32 @@ jobs:
             | JPACK_CONFIG=projects/judgment-pack-quickstart/jpack.json jpack mcp \
             | grep -q '"experimental_evaluate"'
 
+      - name: Pasted author_pack prompt still matches the pinned runtime
+        # prompts/author_pack-prompt.txt is a verbatim copy of the runtime's
+        # author_pack prompt, for clients that expose tools but not prompts. It
+        # silently drifted for three releases -- telling agents to declare
+        # specVersion 0.1.0-draft while this repo's own packs declare
+        # 0.2.0-draft -- because nothing compared it to the release it claims to
+        # be a copy of. This does.
+        run: |
+          printf '%s\n%s\n%s\n' \
+            '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"drift-ci","version":"0"}}}' \
+            '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+            '{"jsonrpc":"2.0","id":2,"method":"prompts/get","params":{"name":"author_pack"}}' \
+            | JPACK_CONFIG=projects/judgment-pack-quickstart/jpack.json jpack mcp \
+            > prompts-response.jsonl
+          python3 - <<'PY' > author_pack-from-runtime.txt
+          import json
+          for line in open("prompts-response.jsonl"):
+              message = json.loads(line)
+              if message.get("id") == 2:
+                  print("".join(part["content"]["text"]
+                                for part in message["result"]["messages"]), end="")
+          PY
+          diff -u prompts/author_pack-prompt.txt author_pack-from-runtime.txt \
+            || { echo "::error::prompts/author_pack-prompt.txt has drifted from the pinned runtime's author_pack prompt; re-paste it"; exit 1; }
+          rm -f prompts-response.jsonl author_pack-from-runtime.txt
+
       - name: Match the container user to this runner
         run: |
           echo "HOST_UID=$(id -u)" >> "$GITHUB_ENV"

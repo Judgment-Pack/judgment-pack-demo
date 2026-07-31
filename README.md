@@ -79,7 +79,7 @@ This repo also carries ready-made wiring for native MCP clients — the binary m
 PATH ([releases](https://github.com/Judgment-Pack/judgment-pack-runtime/releases)):
 
 - **Claude Code**: [.mcp.json](.mcp.json) is picked up when you open this repo; MCP prompts
-  appear as slash commands (`/mcp__judgment-pack__author_pack`).
+  appear as slash commands (`/mcp__jpack__author_pack`, after the server name in [.mcp.json](.mcp.json)).
 - **VS Code / Copilot**: [.vscode/mcp.json](.vscode/mcp.json), prompts as `/mcp.jpack.…`.
 - **GitHub Codespaces / devcontainer**: open this repo in a Codespace — the
   [devcontainer](.devcontainer/devcontainer.json) installs the pinned release and proves the

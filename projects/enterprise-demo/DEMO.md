@@ -174,8 +174,8 @@ evidence — so onboarding consumes a decision, not a transcribed value.
      requested handoffs (screening → Compliance, onboarding → Vendor risk committee). Nothing
      guessed, everything attributed.
    - `jpack experimental graph test` — no arguments: the project declares its graph and rows in
-     `jpack.json` (configVersion 2), and the walk runs the declared suite exactly as `packs
-     test` runs the matrices. Four byte-exact rows: the three stories above plus a
+     `jpack.json` (configVersion 2, its ADR-0017), and the walk runs the declared suite exactly
+     as `packs test` runs the matrices. Four byte-exact rows: the three stories above plus a
      committee-threshold row (screening clear, spend 600000, everything documented — escalation
      by policy, not by ignorance; `graphs/inputs-committee-threshold.json` runs it by hand if
      asked). The same determinism proof `packs test` gives, one level up, and it needs no model
