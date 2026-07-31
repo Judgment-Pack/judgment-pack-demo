@@ -67,9 +67,12 @@ Expect: the screening record shows a MATCH → the `sanctions-match-hard-stop` e
 > no screening record yet. Evaluate it honestly.
 
 Expect: no screening record in `evidence/` → the screening status pointer is omitted and the
-evidence reported honestly; the pack refuses to guess: **unresolved**, reason `unknown`,
-handoff **requested → Vendor risk committee**. The narration says which condition was unknown
-and that the handoff is a request recorded, not a delivery.
+evidence reported honestly (`sanctions-screening: absent` — nobody made a record, which is not
+the same as being unable to check); the pack refuses to guess: **unresolved**, reasons
+`missing-required-evidence` **and** `unknown`, handoff **requested → Vendor risk committee**.
+Both reasons are the honest answer: the required screening evidence is absent *and* the
+hard-stop condition cannot be evaluated. The narration says which condition was unknown and
+that the handoff is a request recorded, not a delivery.
 
 Optional twist, same prompt family: give the spend as `600000` with full evidence — the
 committee threshold exception escalates **directly**, even though everything is documented.
@@ -191,6 +194,12 @@ loudly is the demo.
 
 ## Fallbacks
 
+- **Agent says it has no MCP tools** (e.g. asked to "list your MCP tools") → it almost
+  certainly has them; models are poor at enumerating their own tool set. Do not debug the
+  stack — just give it work: "Call list_packs and show me what this project holds." If that
+  returns the four packs, the wiring is fine. To confirm from the terminal:
+  `docker compose exec openhands sh -lc 'JPACK_CONFIG=/projects/enterprise-demo/jpack.json jpack mcp'`
+  and send an `initialize` + `tools/list` pair — it answers with nine tools.
 - Agent narrates without evaluating → "Call the experimental_evaluate tool with pack_id
   vendor-onboarding and show me the payload."
 - Agent invents a screening status in step 5 → "Where is the screening record? Report what
@@ -200,6 +209,9 @@ loudly is the demo.
   document — rebuild the table from get_pack and state what it omits."
 - Model/API hiccup → `packs test` in the terminal shows the 18-row byte-exact suite as the
   determinism proof without any model.
-- Everything comes back unresolved with every condition unknown → the facts document is
-  probably flat pointer-named members instead of the nested object the pointers descend into;
-  the worked shape is in `.openhands/microagents/repo.md`.
+- Everything comes back unresolved with every condition unknown → two causes, and the trace
+  tells you which. If the trace's first line is `{"stage":"applicability","condition":"unknown"}`
+  the facts are missing `/request/type` (`new-vendor-onboarding`) and the pack never became
+  applicable — nothing else was even evaluated. Otherwise the facts document is probably flat
+  pointer-named members instead of the nested object the pointers descend into; the worked shape
+  is in `.openhands/microagents/repo.md`.
