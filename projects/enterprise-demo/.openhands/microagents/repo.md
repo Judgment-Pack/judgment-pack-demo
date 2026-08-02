@@ -152,7 +152,11 @@ When the user asks to encode a policy as a new pack, work this loop:
    diagnostic names its location and the fix. Repair and repeat until the result is valid.
 4. **Register**: write the file to `packs/<decision-id>.pack.json`, add the entry to
    `jpack.json` (path, description, expectedVersion, any facts/evidence hints), and run
-   `jpack packs validate` in the terminal — every check must pass.
+   `jpack packs validate` in the terminal — every check must pass. This project keeps a
+   reviewed-set lock (`jpack.lock.json`): registering is an amendment, so finish with
+   `jpack packs lock` — a deciding evaluation of a declared pack whose bytes drifted from
+   the lock refuses until you do (drafts evaluated by path are never refused; their
+   records say `reviewed: false`).
 5. **Test**: write a small instance matrix (`packs/<decision-id>.matrix.json`) — one row per
    outcome plus an unknown probe — register it, and run `jpack packs test`. Byte-exact
    expectations: run one evaluation first if unsure of the exact disposition bytes.

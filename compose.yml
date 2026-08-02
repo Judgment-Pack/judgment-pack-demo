@@ -4,12 +4,12 @@ services:
       context: .
       args:
         AGENT_CANVAS_VERSION: ${AGENT_CANVAS_VERSION:-1.6.1}
-        JUDGMENT_PACK_VERSION: ${JUDGMENT_PACK_VERSION:-0.12.0}
+        JUDGMENT_PACK_VERSION: ${JUDGMENT_PACK_VERSION:-0.13.0}
         GATEWAY_REF: ${GATEWAY_REF:-3a9f8a89dbb2a87ebdc25155afe5ea90d2185498}
         DERIVATION_REF: ${DERIVATION_REF:-6f5500fb8e61014632f9b4b85e9ce68fcebf0e39}
         HOST_UID: ${HOST_UID:-1000}
         HOST_GID: ${HOST_GID:-1000}
-    image: judgment-pack-demo:${JUDGMENT_PACK_VERSION:-0.12.0}
+    image: judgment-pack-demo:${JUDGMENT_PACK_VERSION:-0.13.0}
     ports:
       - "127.0.0.1:8000:8000"
     environment:
@@ -46,7 +46,7 @@ services:
   # (bare `restart` fails against a recreated namespace; plain `up -d` is a
   # no-op while this container still reports Up).
   gateway:
-    image: judgment-pack-demo:${JUDGMENT_PACK_VERSION:-0.12.0}
+    image: judgment-pack-demo:${JUDGMENT_PACK_VERSION:-0.13.0}
     network_mode: "service:openhands"
     depends_on:
       - openhands

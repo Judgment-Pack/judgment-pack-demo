@@ -42,6 +42,8 @@ jobs:
         run: |
           jpack packs validate
           jpack packs test
+          # The reviewed-set lock (ADR-0019): the committed law must match its lock.
+          jpack packs verify
 
       - name: Generated graph inputs are current
         # graphs/inputs-*.json are DERIVED from vendor-onboarding.rows.json, which
