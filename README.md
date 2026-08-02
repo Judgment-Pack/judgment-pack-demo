@@ -125,7 +125,9 @@ PATH ([releases](https://github.com/Judgment-Pack/judgment-pack-runtime/releases
 
 [`projects/enterprise-demo`](projects/enterprise-demo) is the presentable demo: a vendor-onboarding
 decision with a sanctions-screening hard stop (cited to the public OFAC list), an expense policy,
-and the intake-triage pack — each with a byte-exact instance matrix. The MCP server is seeded
+and the intake-triage pack — each with a byte-exact instance matrix. The project declares an
+audit directory (`configVersion "3"`), so every evaluation is recorded as a replayable line in
+`audit/evaluations.jsonl` — the decision book Act 5 closes on. The MCP server is seeded
 against this project by default. [`DEMO.md`](projects/enterprise-demo/DEMO.md) is the 6-minute
 script: browse, present the pack as a grounded table, the clean approval,
 the forced reject, and the escalation the honesty rule exists for.

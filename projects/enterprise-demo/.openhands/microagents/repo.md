@@ -8,7 +8,9 @@ you invents facts.
 
 Layout: `jpack.json` (the project's packs), `packs/` (pack documents + instance matrices),
 `requests/` (incoming vendor/expense requests), `evidence/` (saved screening and document
-records).
+records), `audit/` (the project's decision book — every evaluation you run is recorded there
+by the runtime as one JSON line; never edit it, and if asked what was decided, read it
+rather than recalling).
 
 ## The one rule that outranks everything
 

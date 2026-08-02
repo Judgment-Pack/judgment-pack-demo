@@ -1,5 +1,8 @@
 {
- "configVersion": "2",
+ "configVersion": "3",
+ "audit": {
+  "dir": "audit"
+ },
  "packs": {
   "vendor-onboarding": {
    "path": "packs/vendor-onboarding.pack.json",

@@ -152,5 +152,9 @@ jobs:
             attest check
             jpack experimental graph evaluate graphs/vendor-onboarding.graph.json \
               --inputs attested/screening-inputs.json | grep -q "outcome approve"
+            # The project declares an audit directory: the graph runs above must
+            # have written the decision book, and node + composite lines share a run.
+            test -s audit/evaluations.jsonl
+            grep -q "\"kind\":\"graph-composite\"" audit/evaluations.jsonl
           '
           docker compose down
