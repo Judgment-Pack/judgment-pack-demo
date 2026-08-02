@@ -192,6 +192,61 @@ prints an unknown-command error — say so and fall back to Act 1's manual bridg
 same story told by hand. A validation refusal names its exact defect; read it aloud — refusing
 loudly is the demo.
 
+## Act 4 — the attested input (~3 min)
+
+Act 3 declared the seam, but the inputs file was still something someone typed. This act
+acquires the screening **through the screening desk** — the reference gateway running beside
+the sandbox — so the number the graph consumes carries a signed, chained receipt, and the
+derivation from receipt to inputs is a corpus-tested rule, not the model. The honest bound,
+said out loud: the desk proves **byte-lineage, not truth** — these bytes, from that desk,
+unaltered since — and its world is a baked synthetic snapshot. What it removes is the model
+from the proof path: a fabricated screening value cannot carry a valid receipt.
+
+Pre-flight (with the usual reset): from the sandbox terminal,
+`curl -fsS 127.0.0.1:8787/publickey` answers — if not:
+`docker compose up -d --force-recreate gateway`.
+
+1. **Acquire** (agent or terminal — same commands, one code path):
+
+   > **Prompt:** Screen "Meridian Maritime Holdings SA" through the screening desk and
+   > evaluate vendor onboarding from the attested result. Use attest, and narrate what the
+   > desk did and did not claim.
+
+   The agent runs `attest screen "Meridian Maritime Holdings SA" --template
+   graphs/inputs-meridian-match.json`, then `attest check`, then the graph evaluation on
+   `attested/screening-inputs.json`. Expect: the receipt summary (authority, keyId, digest),
+   `verify … this session: ok` with the registry fetched from the key holder, the derivation
+   `resolved`, and the same **reject** as the hard stop (§4) — now from an attested "2".
+
+2. **The diff beat**: `diff attested/screening-inputs.json graphs/inputs-meridian-match.json`
+   is empty. The desk route reproduced the committed fixture byte for byte — same decision,
+   different provenance; only one of the two routes can prove nobody edited it afterwards.
+
+3. **Tamper — the peak.** The store is mounted read-write in the sandbox on purpose:
+
+   ```
+   attest tamper --match-count 0     # forge a "clear" into the stored artifact
+   attest check                      # artifact-mismatch → WITHHELD, evidence unknown
+   jpack experimental graph evaluate graphs/vendor-onboarding.graph.json \
+     --inputs attested/screening-inputs.json
+   ```
+
+   Expect: **unresolved (unknown)**, no fact injected, both handoffs — the forged "clear"
+   could not carry a valid receipt, so the derivation refused to assert anything. *"Act 1's
+   honesty was a rule the model follows. This one is arithmetic."*
+
+4. **Optional, irreversible variant**: `attest rollback` deletes the newest signed receipt —
+   the sealed registry still promises it existed (`tail-rollback`), and nothing can re-create
+   its signature. Use this beat for a sharp audience member who says "just re-run it".
+
+**Act 4 fallbacks**: desk unreachable → `docker compose up -d --force-recreate gateway`
+(the expected trigger is a host/WSL restart; bare `restart` and plain `up -d` do not fix it).
+`session is sealed` → just re-run `attest screen`; every run mints a fresh session. Store
+poisoned from rehearsals → `./scripts/reset-demo.sh` (wipes store + registry together,
+identity survives; it also discards uncommitted edits under this project, by design). A
+verification failure you didn't stage → read the findings aloud; refusing loudly is the demo.
+Full boundary notes: `attestation/README.md` in the repo root.
+
 ## Fallbacks
 
 - **Agent says it has no MCP tools** (e.g. asked to "list your MCP tools") → it almost

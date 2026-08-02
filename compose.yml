@@ -5,20 +5,59 @@ services:
       args:
         AGENT_CANVAS_VERSION: ${AGENT_CANVAS_VERSION:-1.6.1}
         JUDGMENT_PACK_VERSION: ${JUDGMENT_PACK_VERSION:-0.11.0}
+        GATEWAY_REF: ${GATEWAY_REF:-3a9f8a89dbb2a87ebdc25155afe5ea90d2185498}
+        DERIVATION_REF: ${DERIVATION_REF:-6f5500fb8e61014632f9b4b85e9ce68fcebf0e39}
         HOST_UID: ${HOST_UID:-1000}
         HOST_GID: ${HOST_GID:-1000}
     image: judgment-pack-demo:${JUDGMENT_PACK_VERSION:-0.11.0}
     ports:
       - "127.0.0.1:8000:8000"
+    environment:
+      # The verifier requires this exact label on every receipt; the gateway
+      # signs under the same variable. If they ever disagree, every screening
+      # degrades to unknown with authority-mismatch findings.
+      GATEWAY_AUTHORITY: ${GATEWAY_AUTHORITY:-gateway:enterprise-demo}
     volumes:
       # The file browser's root: every folder here is a project the agent can open.
       - ${PACKS_DIR:-./projects}:/projects
       # OpenHands state (settings, sessions) plus the pre-seeded MCP config.
       - ./state:/home/openhands/.openhands
+      # The attestation store (receipts + artifacts): read-write on purpose —
+      # tampering with it is the demo. The pin is read-only; the seed and the
+      # seal registry are NOT mounted here at all.
+      - ./gateway-state/public:/gateway
+      - ./gateway-state/pin:/gateway-pin:ro
     stdin_open: true
     tty: true
     # Survive host/WSL restarts: the sandbox comes back without a manual
     # `docker compose up` (state and MCP seeding persist in ./state).
+    restart: unless-stopped
+
+  # The attestation gateway (screening desk). It shares the sandbox's network
+  # namespace, so its hard-coded 127.0.0.1:8787 bind lands on the agent's own
+  # loopback — reachable from every sandbox tool, published to the host
+  # nowhere. Its signing seed and seal registry live under
+  # gateway-state/private, which the sandbox never mounts: the agent can ask
+  # for attestations and vandalize the store, but cannot sign, re-pin, or
+  # touch the anchor.
+  #
+  # After the openhands container restarts or is recreated, recover with
+  #   docker compose up -d --force-recreate gateway
+  # (bare `restart` fails against a recreated namespace; plain `up -d` is a
+  # no-op while this container still reports Up).
+  gateway:
+    image: judgment-pack-demo:${JUDGMENT_PACK_VERSION:-0.11.0}
+    network_mode: "service:openhands"
+    depends_on:
+      - openhands
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    entrypoint: ["/usr/local/libexec/gateway-up.sh"]
+    environment:
+      GATEWAY_AUTHORITY: ${GATEWAY_AUTHORITY:-gateway:enterprise-demo}
+    volumes:
+      - ./gateway-state/private:/private
+      - ./gateway-state/pin:/gateway-pin
+      - ./gateway-state/public:/gateway
     restart: unless-stopped
 
   # Oneshot: registers the jpack MCP server in agent-canvas settings on

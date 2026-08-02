@@ -51,7 +51,12 @@ jpack experimental evaluate packs/data-request-intake-triage.pack.json \
 # Delete a load-bearing fact and re-run — it ESCALATES instead of guessing:
 jq 'del(.request.completeness)' full-facts.json > partial-facts.json
 jpack experimental evaluate packs/data-request-intake-triage.pack.json \
-  --facts partial-facts.json --evidence evidence.The
+  --facts partial-facts.json --evidence evidence.json
+# → disposition: unresolved (unknown), handoff requested to "Intake reviewer",
+#   trace showing each rule that went unknown and escalated
+```
+
+Same inputs, same bytes, on any machine — that's the conformance claim doing its job. The
 `trace` in every payload is the pack-grounded reasoning: which exception and rule evaluated to
 what, which unknowns were escalating, which were ignored.
 
@@ -97,6 +102,10 @@ PATH ([releases](https://github.com/Judgment-Pack/judgment-pack-runtime/releases
   directory; a path that leaves it is refused.
 - **Nothing here authorizes anything.** A disposition is the §8.3 portable result of applying a
   pack to facts; whether to act on it is yours (JPS §3.5).
+- **The screening desk holds the only signing key.** The attestation gateway's seed and seal
+  registry live in a mount the sandbox never sees ([attestation/README.md](attestation/README.md));
+  the agent can request attestations and even tamper with the store, but it cannot sign,
+  re-pin, or touch the anchor. What that proves is byte-lineage, not truth.
 
 ## Troubleshooting
 
@@ -120,3 +129,17 @@ and the intake-triage pack — each with a byte-exact instance matrix. The MCP s
 against this project by default. [`DEMO.md`](projects/enterprise-demo/DEMO.md) is the 6-minute
 script: browse, present the pack as a grounded table, the clean approval,
 the forced reject, and the escalation the honesty rule exists for.
+
+### Attested inputs (Act 4)
+
+The demo also runs the [reference attestation gateway](https://github.com/Judgment-Pack/judgment-pack-gateway)
+as a *screening desk* beside the sandbox (same network namespace, `127.0.0.1:8787`, published
+nowhere). `attest` acquires a sanctions screening through it, verifies the store against the
+sealed registry under an out-of-band-pinned key, and derives the graph inputs with the
+corpus-tested rule from the
+[experiments repo](https://github.com/Judgment-Pack/judgment-pack-evaluator-experiments) —
+so the number the vendor-onboarding graph consumes carries a signed, chained receipt, and the
+tamper beat in [DEMO.md](projects/enterprise-demo/DEMO.md) shows a forged value failing
+verification instead of being believed. Both are built from pinned commits at image build
+time (`GATEWAY_REF` / `DERIVATION_REF` in [.env.example](.env.example)); boundary and
+recovery notes live in [attestation/README.md](attestation/README.md).

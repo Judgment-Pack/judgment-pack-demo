@@ -1,3 +1,6 @@
 state/*
 !state/.gitkeep
+gateway-state/*/*
+!gateway-state/*/.gitkeep
+__pycache__/
 .env

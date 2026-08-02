@@ -1,0 +1,16 @@
+{
+  "listSnapshot": "2026-07-01",
+  "lists": ["SDN", "Consolidated"],
+  "entries": [
+    {
+      "name": "Meridian Maritime Holdings SA",
+      "program": "SDN",
+      "profile": "vessel operator"
+    },
+    {
+      "name": "Meridian Maritime Holdings SA",
+      "program": "Consolidated",
+      "profile": "exact name match"
+    }
+  ]
+}

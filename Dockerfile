@@ -8,8 +8,33 @@
 
 ARG AGENT_CANVAS_VERSION=1.6.1
 ARG JUDGMENT_PACK_VERSION=0.11.0
+# The attestation gateway and the derivation rule have no release channels yet,
+# so both are pinned by commit and built from source. When the gateway cuts a
+# release, GATEWAY_REF becomes an attested image pin like the runtime's above.
+ARG GATEWAY_REF=3a9f8a89dbb2a87ebdc25155afe5ea90d2185498
+ARG DERIVATION_REF=6f5500fb8e61014632f9b4b85e9ce68fcebf0e39
 
 FROM ghcr.io/judgment-pack/judgment-pack:${JUDGMENT_PACK_VERSION} AS runtime
+
+FROM golang:1.26-alpine AS gateway-build
+ARG GATEWAY_REF
+ADD https://codeload.github.com/Judgment-Pack/judgment-pack-gateway/tar.gz/${GATEWAY_REF} /tmp/gateway.tar.gz
+RUN mkdir -p /src && tar -xzf /tmp/gateway.tar.gz -C /src --strip-components=1
+WORKDIR /src/go
+# `conform` replays the frozen corpus: this image cannot be built from a
+# gateway commit that disagrees with it.
+RUN CGO_ENABLED=0 go build -buildvcs=false -o /out/gateway . && /out/gateway conform
+
+FROM python:3.13-alpine AS derivation-build
+ARG DERIVATION_REF
+ADD https://codeload.github.com/Judgment-Pack/judgment-pack-evaluator-experiments/tar.gz/${DERIVATION_REF} /tmp/experiments.tar.gz
+RUN mkdir -p /src && tar -xzf /tmp/experiments.tar.gz -C /src --strip-components=1
+WORKDIR /src/derivation-rule
+# The reference implementation must agree with its own frozen corpus before
+# this image may carry it.
+RUN python3 agreement.py && python3 -m unittest test_derive -q \
+ && mkdir -p /out/rules && cp derive.py derive_cli.py /out/ \
+ && cp rules/screening.rule.json /out/rules/
 
 FROM ghcr.io/openhands/agent-canvas:${AGENT_CANVAS_VERSION}
 # Align the container user with the host user so the bind mounts (state/ and
@@ -31,5 +56,15 @@ RUN if [ "$(id -u openhands)" != "${HOST_UID}" ] || [ "$(id -g openhands)" != "$
 # the rename launch judgment-pack, which no longer exists here: delete ./state
 # (or its agent-canvas settings) so mcp-seed registers jpack on the next boot.
 COPY --from=runtime --chmod=755 /jpack /usr/local/bin/jpack
+# The attested-screening desk: the gateway binary, the verifier's derivation
+# rule, and the demo's glue. Both compose services run this same image; the
+# gateway container consults its own copies of the source and watchlist, so
+# nothing the sandbox edits feeds them.
+COPY --from=gateway-build --chmod=755 /out/gateway /usr/local/bin/gateway
+COPY --from=derivation-build /out /usr/local/share/derivation-rule
+COPY --chmod=755 attestation/attest.py /usr/local/bin/attest
+COPY --chmod=755 attestation/ofac-screening-source.py /usr/local/libexec/ofac-screening-source.py
+COPY --chmod=755 attestation/gateway-up.sh /usr/local/libexec/gateway-up.sh
+COPY attestation/watchlist.json /usr/local/share/ofac/watchlist.json
 USER openhands
 
