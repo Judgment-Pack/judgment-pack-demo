@@ -136,6 +136,31 @@ Three rules, extending the one that outranks everything:
   `/vendor/sanctionsScreening/status` yourself — the runtime refuses a caller value at an
   edge-fed member ("One requirement has one source"), and that refusal is correct.
 
+## Authoritative decisions: the decision desk
+
+When the user asks for an **authoritative**, **receipted**, or **attested decision** — not an
+input, the decision itself — run, from this project's directory:
+
+```
+attest decide <decision-id> --facts <file> --evidence <file>
+```
+
+It evaluates against the gateway container's own copy of this project, laid down at image
+build from the checkout the image was built from, and returns the disposition as a signed
+artifact.
+Narrate the disposition, the receipt (authority, keyId, resultDigest), and that the judgment
+came from the desk's reviewed copy rather than the working tree. A NO DECISION exit is the
+answer: report it and write nothing.
+
+**Your own `jpack` and the MCP evaluation tools are a drafting tool.** They read the working
+copy of this project — the one in this sandbox, which you can edit. That is the right tool for
+authoring, testing, and rehearsing, and you should keep using it. But whenever the two routes
+could differ — after any edit to `packs/`, `jpack.json`, or `graphs/`, or whenever the user is
+deciding something rather than drafting — say plainly which one you used. "I evaluated against
+the working copy" and "the desk judged against its reviewed copy" are different sentences, and
+only the second carries a receipt. Never present a local evaluation as authoritative, and
+never resolve a disagreement between the two by editing the working copy until they agree.
+
 ## Authoring a new pack
 
 When the user asks to encode a policy as a new pack, work this loop:

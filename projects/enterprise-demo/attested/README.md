@@ -12,6 +12,14 @@ untracked, so `scripts/reset-demo.sh` (`git clean -fd`) clears it:
 - `screening-inputs.json` — the derived graph inputs `jpack experimental graph
   evaluate` consumes. Written on every `attest check`: verified runs carry the
   attested matchCount; withheld runs carry `screening-record: unknown`.
+- `decision.json` — the receipted judgment from `attest decide`: the decision id
+  asked for, the pack identity and version the desk applied, the facts and
+  evidence as asked, and the §8.3 disposition. It is the same JSON *value* the
+  receipt signs, re-indented for reading — so `sha256sum` of this file will not
+  equal the receipt's `resultDigest`, which is over the store's compact
+  canonical bytes. Written only when verification passed; the previous file is
+  removed before the run starts, so nothing downstream can read a stale judgment
+  as this run's.
 
 The derived inputs do not live in `graphs/` because `graphs/inputs-*.json` are
 generated from `vendor-onboarding.rows.json` (see `graphs/README.md`) and

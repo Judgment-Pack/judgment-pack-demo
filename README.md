@@ -144,4 +144,8 @@ so the number the vendor-onboarding graph consumes carries a signed, chained rec
 tamper beat in [DEMO.md](projects/enterprise-demo/DEMO.md) shows a forged value failing
 verification instead of being believed. Both are built from pinned commits at image build
 time (`GATEWAY_REF` / `DERIVATION_REF` in [.env.example](.env.example)); boundary and
-recovery notes live in [attestation/README.md](attestation/README.md).
+recovery notes live in [attestation/README.md](attestation/README.md). The same gateway also
+runs a **decision desk** (`attest decide`): it evaluates against a copy of the project baked
+into its own container at image build, so the receipted judgment comes from law the sandbox
+cannot reach — the copy you can edit is not the copy that judges. Reset before you rebuild:
+the baked copy is the build context.
