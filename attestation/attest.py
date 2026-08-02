@@ -21,6 +21,16 @@ Verbs (run from a project directory, e.g. /projects/enterprise-demo):
       bad template). Any stale inputs document is removed before anything
       else, so no failure path leaves a previous run's positive result behind.
 
+  attest decide <pack-id> --facts <file> --evidence <file>
+      Ask the DECISION desk to judge, and receipt the judgment. The desk
+      evaluates against a copy of this project baked into the gateway
+      container from the checkout the image was built from; the working tree
+      the agent can edit is not the tree that judges. Verifies exactly as
+      `check` does, then writes attested/decision.json from the receipted
+      artifact bytes. Exit 0 decided, 3 NO DECISION (this run's own receipt or
+      artifact failed verification — nothing is written), 4 the verifier could
+      not reach a verdict at all, 1 could not even start.
+
   attest tamper [--match-count N]
       Edit the attested matchCount inside the content-addressed artifact the
       session's receipt cites. The next `attest check` must report
@@ -61,6 +71,7 @@ MAX_AGE_SECONDS = 86400
 
 SESSION_FILE = os.path.join("attested", "session.json")
 INPUTS_FILE = os.path.join("attested", "screening-inputs.json")
+DECISION_FILE = os.path.join("attested", "decision.json")
 REGISTRY_FETCHED = os.path.join("attested", "registry.fetched.jsonl")
 
 RECOVERY = (
@@ -173,20 +184,56 @@ def artifact_path(receipt):
     return os.path.join(STORE, "artifacts", hexpart), hexpart
 
 
-def cmd_screen(args):
-    subject = args.subject.strip()
-    if not subject:
-        fail("attest: subject must be a non-empty string")
-    load_template(args.template)  # fail before acquiring, not after
-
+def mint_session(prefix, subject):
+    """One session id per acquisition, shaped so the store path is a token."""
     slug = re.sub(r"-+", "-", re.sub(r"[^a-z0-9]", "-", subject.lower())).strip("-")
-    session = "ofac-{}-{}-{}".format(
+    session = "{}-{}-{}-{}".format(
+        prefix,
         slug[:40],
         datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"),
         secrets.token_hex(2),
     )
     if not re.fullmatch(r"[A-Za-z0-9._-]{1,128}", session):
         fail(f"attest: session id {session!r} is not a valid token")
+    return session
+
+
+def receipted_artifact(session, narrate):
+    """Verify the store for one session and return the bytes its receipt covers.
+
+    The whole verification ceremony `check` performs, in the order that makes it
+    mean anything: the registry from the key holder, the reference verifier under
+    the out-of-band pin, the verdict scoped to this session, and the artifact
+    re-digested against what the receipt signed. Returns None when any of it
+    fails — the caller decides what a failure means, because for a screening it
+    is a withholding and for a decision it is no decision at all.
+    """
+    verdict, (ok, reasons) = run_verify(session)
+    say(narrate,
+        f"verify    store-wide ok={verdict.get('ok')}  "
+        f"this session: {'ok' if ok else ', '.join(reasons)}  (pin {PIN})",
+        "          registry fetched from the key holder, not read from the store")
+    if not ok:
+        return None, "verification failed: " + ", ".join(reasons), None
+    _, receipt = newest_receipt(session)
+    path, hexpart = artifact_path(receipt)
+    try:
+        with open(path, "rb") as f:
+            artifact_bytes = f.read()
+    except OSError:
+        return None, "artifact missing from the store", receipt
+    if hashlib.sha256(artifact_bytes).hexdigest() != hexpart:
+        return None, "artifact re-digest mismatch", receipt
+    return artifact_bytes, None, receipt
+
+
+def cmd_screen(args):
+    subject = args.subject.strip()
+    if not subject:
+        fail("attest: subject must be a non-empty string")
+    load_template(args.template)  # fail before acquiring, not after
+
+    session = mint_session("ofac", subject)
 
     # A new session obsoletes any previously derived document immediately —
     # nothing may evaluate another subject's (or another verdict's) inputs.
@@ -278,31 +325,12 @@ def cmd_check(args):
     except OSError:
         pass
 
-    verdict, (ok, reasons) = run_verify(session)
-    say(narrate,
-        f"verify    store-wide ok={verdict.get('ok')}  "
-        f"this session: {'ok' if ok else ', '.join(reasons)}  (pin {PIN})",
-        "          registry fetched from the key holder, not read from the store")
-
-    withheld = None
+    artifact_bytes, withheld, _ = receipted_artifact(session, narrate)
     claim = None
-    if not ok:
-        withheld = "verification failed: " + ", ".join(reasons)
-    else:
-        _, receipt = newest_receipt(session)
-        path, hexpart = artifact_path(receipt)
-        try:
-            with open(path, "rb") as f:
-                artifact_bytes = f.read()
-        except OSError:
-            withheld = "artifact missing from the store"
-        if withheld is None:
-            if hashlib.sha256(artifact_bytes).hexdigest() != hexpart:
-                withheld = "artifact re-digest mismatch"
-            else:
-                claim = derive(subject, json.loads(artifact_bytes))
-                if claim is None:
-                    withheld = "the derivation rule rejected the artifact"
+    if withheld is None:
+        claim = derive(subject, json.loads(artifact_bytes))
+        if claim is None:
+            withheld = "the derivation rule rejected the artifact"
 
     if withheld is None:
         screening = {"facts": claim["facts"], "evidence": claim["evidenceAvailability"]}
@@ -334,6 +362,98 @@ def cmd_check(args):
         f"    --inputs {INPUTS_FILE}")
     unknown = screening["evidence"].get("screening-record") == "unknown"
     sys.exit(3 if unknown else 0)
+
+
+def load_document(path, what):
+    try:
+        with open(path) as f:
+            document = json.load(f)
+    except (OSError, ValueError) as error:
+        fail(f"attest: cannot read the {what} document {path}: {error}")
+    if not isinstance(document, dict):
+        fail(f"attest: the {what} document {path} is not a JSON object")
+    return document
+
+
+def cmd_decide(args):
+    """Ask the decision desk to judge, and receipt the judgment.
+
+    The desk evaluates against a copy of this project inside the gateway
+    container, laid down at image build from the checkout the image was built
+    from. The working copy beside this command can be edited, forged, or
+    deleted, and none of that reaches the desk — which is the whole point of
+    asking it.
+    """
+    # FIRST, before anything that can fail: a new decide run obsoletes the
+    # previous judgment the moment it starts. An argument this command cannot
+    # read is exactly the case where a stale decision.json would otherwise sit
+    # there looking like this run's answer.
+    try:
+        os.remove(DECISION_FILE)
+    except OSError:
+        pass
+
+    pack_id = args.pack_id.strip()
+    if not pack_id:
+        fail("attest: pack-id must be a non-empty string")
+    facts = load_document(args.facts, "facts")
+    evidence = load_document(args.evidence, "evidence") if args.evidence else {}
+
+    session = mint_session("desk", pack_id)
+
+    acquired = http_json("/acquire", {
+        "session": session,
+        "source": "decision-desk",
+        "arguments": {"packId": pack_id, "facts": facts, "evidence": evidence},
+    })
+    sealed = http_json("/seal", {"session": session})
+    receipt = acquired.get("receipt", {})
+    say(sys.stdout,
+        f"acquired  session {session}",
+        f"          authority {receipt.get('authority')}  keyId {receipt.get('keyId')}",
+        f"          resultDigest {receipt.get('resultDigest')}",
+        f"sealed    finalCount {sealed.get('finalCount', sealed)}",
+        "")
+
+    artifact_bytes, refused, verified_receipt = receipted_artifact(session, sys.stdout)
+    if refused is not None:
+        # Not a withholding. A screening that cannot be verified degrades to
+        # "unknown", which is an answer the graph acts on; a judgment that
+        # cannot be verified is not a judgment at all, and writing one would be
+        # the exact thing this desk exists to make impossible.
+        say(sys.stderr,
+            "",
+            f"NO DECISION  {refused}  (session {session})",
+            "             nothing was written: an unverifiable judgment is not a",
+            "             judgment, and this command will not leave one on disk",
+            "             for something downstream to read as one.")
+        sys.exit(3)
+
+    decision = json.loads(artifact_bytes)
+    disposition = decision.get("disposition", {})
+    os.makedirs("attested", exist_ok=True)
+    with open(DECISION_FILE, "w") as f:
+        f.write(json.dumps(decision, indent=2, sort_keys=True) + "\n")
+
+    outcome = disposition.get("outcomeId")
+    headline = disposition.get("kind", "?")
+    if outcome:
+        headline += f" {outcome}"
+    say(sys.stdout,
+        "",
+        f"decided   {headline}",
+        f"          pack {decision.get('packId')} {decision.get('packVersion')}"
+        f"  (desk project {decision.get('deskProject')})",
+        f"          receipt keyId {verified_receipt.get('keyId')}"
+        f"  resultDigest {verified_receipt.get('resultDigest')}",
+        f"          handoff {disposition.get('handoff', {}).get('state', '?')}"
+        f"  reasons {' '.join(disposition.get('reasons', [])) or '(none)'}",
+        "",
+        f"wrote {DECISION_FILE}",
+        "This judgment came from the desk's own baked copy of the project, not",
+        "from the working tree beside you. The copy you can edit is not the copy",
+        "that judges — and the receipt above signs which one did.")
+    sys.exit(0)
 
 
 def cmd_tamper(args):
@@ -390,6 +510,15 @@ def main():
     check.add_argument("--stdout", action="store_true",
                        help="write the inputs document to stdout (narration to stderr)")
     check.set_defaults(run=cmd_check)
+
+    decide = verbs.add_parser("decide", help="receipt a judgment from the decision desk")
+    decide.add_argument("pack_id", metavar="pack-id",
+                        help="the decision id the desk's own jpack.json declares")
+    decide.add_argument("--facts", required=True,
+                        help="JSON facts document (decimal strings, never numbers)")
+    decide.add_argument("--evidence",
+                        help="optional JSON evidence-availability document")
+    decide.set_defaults(run=cmd_decide)
 
     tamper = verbs.add_parser("tamper", help="edit the attested artifact in the store")
     tamper.add_argument("--match-count", default="0")
