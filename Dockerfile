@@ -64,7 +64,33 @@ COPY --from=gateway-build --chmod=755 /out/gateway /usr/local/bin/gateway
 COPY --from=derivation-build /out /usr/local/share/derivation-rule
 COPY --chmod=755 attestation/attest.py /usr/local/bin/attest
 COPY --chmod=755 attestation/ofac-screening-source.py /usr/local/libexec/ofac-screening-source.py
+COPY --chmod=755 attestation/decision-desk-source.py /usr/local/libexec/decision-desk-source.py
 COPY --chmod=755 attestation/gateway-up.sh /usr/local/libexec/gateway-up.sh
 COPY attestation/watchlist.json /usr/local/share/ofac/watchlist.json
+# The decision desk's law: a copy of the project laid down from the BUILD
+# CONTEXT — the checkout this image is built from, not HEAD. Build from a reset
+# tree (./scripts/reset-demo.sh first) or you bake whatever is in the working
+# copy at that moment; the guard below turns that discipline into a build gate
+# as soon as the project carries a reviewed-set lock.
+#
+# Both compose services run this image, so the sandbox holds a copy too — and
+# that copy is inert and read-only: the law is left root-owned, so neither
+# container's copy can be edited by the runtime user. The desk consults the one
+# in ITS container. The copy you can edit is not the copy that judges.
+COPY projects/enterprise-demo /usr/local/share/desk/enterprise-demo
+# SELF-ARMING GUARD. Inert while the project carries no jpack.lock.json, and a
+# hard build gate the moment one is committed (runtime ADR-0019): a build whose
+# baked law does not match the reviewed set it declares fails here rather than
+# shipping a desk that judges under law nobody reviewed. This is what upgrades
+# "build from a clean tree" from operational discipline to a verified bound.
+RUN sh -c 'cd /usr/local/share/desk/enterprise-demo \
+ && if [ -f jpack.lock.json ]; then jpack packs verify --config jpack.json; fi'
+# The desk's project declares an audit directory, so the desk keeps its own
+# decision book beside its own law. Without a writable directory here every desk
+# evaluation fails closed on the audit write — correctly, and uselessly. Only
+# this directory is chowned: it is also the mount point the gateway service
+# binds a host path over, so the book survives a container recreate.
+RUN mkdir -p /usr/local/share/desk/enterprise-demo/audit \
+ && chown "${HOST_UID}:${HOST_GID}" /usr/local/share/desk/enterprise-demo/audit
 USER openhands
 

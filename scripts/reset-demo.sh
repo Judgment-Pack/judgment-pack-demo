@@ -14,6 +14,10 @@ git clean -fd projects/enterprise-demo
 # verify again — and the gateway is recreated so its in-memory session map
 # matches the empty store. The identity (seed + pin) survives resets.
 rm -rf gateway-state/public/store gateway-state/private/registry.jsonl
+# The decision desk's own book is rehearsal state too: it records what the desk
+# decided during rehearsals, and a demo should open on an empty one exactly as
+# the project's own book does.
+rm -f gateway-state/desk-audit/evaluations.jsonl
 if command -v docker >/dev/null 2>&1 && [ -n "$(docker compose ps -q gateway 2>/dev/null)" ]; then
   docker compose up -d --force-recreate gateway
 else

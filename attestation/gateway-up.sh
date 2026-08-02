@@ -13,6 +13,10 @@ set -eu
 SEED=/private/gateway.seed
 PIN=/gateway-pin/pinned.pubkey
 AUTHORITY="${GATEWAY_AUTHORITY:-gateway:enterprise-demo}"
+# The decision desk's law. Exported rather than passed inline so the source
+# program sees it however the gateway execs it.
+DESK_PROJECT="${DESK_PROJECT:-/usr/local/share/desk/enterprise-demo}"
+export DESK_PROJECT
 
 # Seed and pin are one artifact: there is no offline pubkey-from-seed command,
 # so a surviving half cannot regenerate the other. Refuse loudly rather than
@@ -47,6 +51,12 @@ if [ ! -f "$SEED" ]; then
   echo "gateway-up: provisioned new identity, keyId $(echo "$out" | sed -n 's/^keyId *//p')"
 fi
 
+# Two desks, one identity. The screening desk attests an input; the decision
+# desk attests a judgment, evaluating against the pristine project copy baked
+# into this container at image build. DESK_PROJECT is passed through when set
+# so a deployment can point the desk at another reviewed tree; the default is
+# the baked one.
 exec gateway serve /gateway/store "$SEED" "$AUTHORITY" /private/registry.jsonl \
   --source "ofac-screening=python3 /usr/local/libexec/ofac-screening-source.py" \
+  --source "decision-desk=python3 /usr/local/libexec/decision-desk-source.py" \
   --port 8787
