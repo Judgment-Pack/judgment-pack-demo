@@ -247,6 +247,49 @@ identity survives; it also discards uncommitted edits under this project, by des
 verification failure you didn't stage → read the findings aloud; refusing loudly is the demo.
 Full boundary notes: `attestation/README.md` in the repo root.
 
+## Act 4b — the same question, with and without the desk (~2.5 min)
+
+One question — *may Meridian be onboarded?* — answered by three routes that produce the same
+decision bytes with different provenance, then the beat that separates them: the **same
+forgery** against each route. The scenario matrix (every row rehearsable on its own):
+
+| # | scenario | route | do | expect |
+|---|----------|-------|----|--------|
+| 1 | records honest | file (§4) | prompt: evaluate `requests/meridian-maritime.md` | **reject** (hard stop) |
+| 2 | record forged | file | edit the record (below), re-prompt §4 | **approve — believed** |
+| 3 | store honest | desk (Act 4) | `attest screen` + `check` + evaluate | **reject**, receipt shown |
+| 4 | store forged | desk | `attest tamper` + `check` + evaluate | **unresolved — withheld** |
+| 5 | desk stopped | desk | `docker compose stop gateway`, then `attest screen` | loud failure, no silent fallback |
+| 6 | desk absent | file | with the gateway still stopped, re-run row 1 | reject — file route needs no desk |
+
+**The forgery contrast (rows 2 vs 4)** — run them back to back:
+
+1. Forge the file record:
+   `sed -i 's/- Result: .*/- Result: 0 matches — CLEAR/' evidence/meridian-maritime-ofac-screening.md`
+   then the §4 prompt again. Expect **approve**, narrated honestly from the forged record —
+   the clerk is honest, the record lied, and *nothing in this route can tell the difference*.
+   Say: *"the honesty rule governs the model. It cannot govern the file."*
+   Restore before moving on: `git checkout -- evidence/` (or `./scripts/reset-demo.sh`).
+2. Forge the desk's store the same way (`attest tamper --match-count 0`, then `attest check`
+   and the evaluation): **unresolved (unknown)**, both handoffs. Same forgery, opposite
+   result. Say: *"one route believed the forgery; one refused it. The difference is not a
+   better model — it is a receipt."*
+
+**The desk-absent scenarios (rows 5-6)**: `docker compose stop gateway`, then
+`attest screen …` — it fails loudly (`cannot reach the gateway`, with the recovery command)
+instead of silently falling back to the file route. That refusal is the behavior: *no
+attestation* is a stated answer, never an assumed one. Row 6 shows the file route still
+works without the desk — the demo degrades to exactly what it was before Act 4, and says
+nothing about provenance. Bring the desk back: `docker compose start gateway` (it was
+stopped, not orphaned — after a host restart use the force-recreate line instead).
+
+**Act 4b fallbacks**: rehearse row 2 last if you are worried about resetting — it dirties a
+tracked file, and `reset-demo.sh` restores it (along with everything else uncommitted here).
+If the agent hesitates to re-evaluate the edited record, that is the microagent's honesty
+rules working as designed — tell it the record is the source and to report what it states;
+the beat lands either way, because faithful transcription of a forged record is the exact
+gap the desk closes.
+
 ## Fallbacks
 
 - **Agent says it has no MCP tools** (e.g. asked to "list your MCP tools") → it almost
