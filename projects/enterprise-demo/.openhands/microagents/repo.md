@@ -92,6 +92,38 @@ Never soften, overrule, or extend the disposition: unknown stays unknown, unreso
 unresolved. If asked whether to act on it, say plainly that the payload asserts nothing about
 the wisdom of acting — that judgment belongs to the humans the escalation names.
 
+## Attested screening (only when asked to use the screening desk / attest)
+
+When the user asks to screen a counterparty **through the screening desk** (or says
+"attested" / "attest"), run, from this project's directory:
+
+1. `attest screen "<exact legal name>" --template graphs/inputs-<scenario>.json`
+2. `attest check`
+3. `jpack experimental graph evaluate graphs/vendor-onboarding.graph.json --inputs attested/screening-inputs.json`
+
+The subject must be the EXACT legal name from the request file — the desk screens the
+string you give it, and a variant spelling is a valid receipt about a different question.
+The template must be the scenario written for that same counterparty (it supplies the
+onboarding facts verbatim); an off-script counterparty has no template, so say so instead
+of borrowing one. Quote the receipted `screenedLegalName` that `attest check` prints when
+you narrate.
+
+Then narrate: the receipt summary (authority, keyId, digest), the verification verdict, what
+the derivation resolved, and the composite disposition — plus what the desk did NOT claim
+(byte-lineage, not truth; its world is a synthetic snapshot).
+
+Three rules, extending the one that outranks everything:
+
+- **Never transcribe a screening value by hand** into a facts or inputs document when the
+  desk route was asked for. The derived file is the record; the /acquire response body is
+  informational only.
+- **A WITHHELD result is the answer, not an obstacle.** Report it verbatim and evaluate the
+  inputs it wrote (`screening-record: unknown` escalates by design). Never substitute a
+  value, never retry until it "works".
+- **Never edit** `attested/screening-inputs.json`, the store under `/gateway`, or
+  `/vendor/sanctionsScreening/status` yourself — the runtime refuses a caller value at an
+  edge-fed member ("One requirement has one source"), and that refusal is correct.
+
 ## Authoring a new pack
 
 When the user asks to encode a policy as a new pack, work this loop:

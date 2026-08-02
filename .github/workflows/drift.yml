@@ -97,7 +97,11 @@ jobs:
           echo "HOST_GID=$(id -g)" >> "$GITHUB_ENV"
 
       - name: Demo image builds
-        run: docker compose build
+        # From .env.example, so the committed pins (not compose.yml's
+        # fallback defaults) are what this job actually builds and exercises.
+        run: |
+          cp .env.example .env
+          docker compose build
 
       - name: Stack comes up, seeds MCP, and the server lists its tools
         run: |
@@ -109,4 +113,44 @@ jobs:
             http://localhost:8000/api/mcp/test \
             -d '{"name":"jpack","server":{"type":"stdio","command":"jpack","args":["mcp"],"env":{"JPACK_CONFIG":"/projects/judgment-pack-quickstart/jpack.json"}}}' \
             | grep -q '"experimental_evaluate"'
+
+      - name: Attested screening acquires, verifies, derives, and refuses tampering
+        # The matrix suites cannot see wiring defects; this is the only
+        # automated coverage the attested act has. The recreate cycle at the
+        # end is the exact motion (a host restart) that strands the gateway in
+        # a dead namespace — and the only way CI catches that coupling
+        # regressing.
+        run: |
+          docker compose up -d gateway
+          for i in $(seq 1 30); do
+            docker compose exec -T openhands sh -c 'curl -fsS http://127.0.0.1:8787/publickey' >/dev/null 2>&1 && break
+            sleep 1
+          done
+          docker compose exec -T openhands sh -c 'curl -fsS http://127.0.0.1:8787/publickey' >/dev/null \
+            || { echo "::error::gateway never answered on the sandbox loopback"; docker compose logs gateway; exit 1; }
+          docker compose exec -T -w /projects/enterprise-demo openhands sh -ec '
+            attest screen "Meridian Maritime Holdings SA" --template graphs/inputs-meridian-match.json
+            attest check
+            diff attested/screening-inputs.json graphs/inputs-meridian-match.json
+            jpack experimental graph evaluate graphs/vendor-onboarding.graph.json \
+              --inputs attested/screening-inputs.json | grep -q "outcome reject"
+            attest tamper --match-count 0
+            if attest check; then echo "tampered store still verified"; exit 1; fi
+            jpack experimental graph evaluate graphs/vendor-onboarding.graph.json \
+              --inputs attested/screening-inputs.json | grep -q "unresolved"
+          '
+          docker compose up -d --force-recreate openhands
+          docker compose up -d --force-recreate gateway
+          for i in $(seq 1 30); do
+            docker compose exec -T openhands sh -c 'curl -fsS http://127.0.0.1:8787/publickey' >/dev/null 2>&1 && break
+            sleep 1
+          done
+          docker compose exec -T openhands sh -c 'curl -fsS http://127.0.0.1:8787/publickey' >/dev/null \
+            || { echo "::error::gateway never answered on the sandbox loopback"; docker compose logs gateway; exit 1; }
+          docker compose exec -T -w /projects/enterprise-demo openhands sh -ec '
+            attest screen "Northwind Analytics Ltd" --template graphs/inputs-northwind-clear.json
+            attest check
+            jpack experimental graph evaluate graphs/vendor-onboarding.graph.json \
+              --inputs attested/screening-inputs.json | grep -q "outcome approve"
+          '
           docker compose down

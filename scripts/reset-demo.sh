@@ -9,4 +9,14 @@ if [ -n "$(git status --short projects/enterprise-demo)" ]; then
 fi
 git checkout -- projects/enterprise-demo
 git clean -fd projects/enterprise-demo
+# The attestation store and its seal registry are rehearsal state too. They are
+# wiped TOGETHER — a store without its registry (or the reverse) can never
+# verify again — and the gateway is recreated so its in-memory session map
+# matches the empty store. The identity (seed + pin) survives resets.
+rm -rf gateway-state/public/store gateway-state/private/registry.jsonl
+if command -v docker >/dev/null 2>&1 && [ -n "$(docker compose ps -q gateway 2>/dev/null)" ]; then
+  docker compose up -d --force-recreate gateway
+else
+  echo "note: gateway not running; its store was wiped on disk only"
+fi
 echo "demo reset: workspace restored"
