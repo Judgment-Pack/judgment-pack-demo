@@ -290,6 +290,49 @@ rules working as designed — tell it the record is the source and to report wha
 the beat lands either way, because faithful transcription of a forged record is the exact
 gap the desk closes.
 
+## Act 5 — the decision on the record (~2 min)
+
+This project declares an audit directory (`jpack.json`, `configVersion "3"`), so every
+evaluation the audience has watched — the agent's MCP calls, the graph runs, the attested
+act — is already a line in `audit/evaluations.jsonl`. Nothing to enable; the book was being
+written the whole time. (`reset-demo.sh` clears it with the rest of the rehearsal state, so
+the book starts at the demo's first decision.)
+
+1. **Show the book** (Files pane or terminal):
+
+   ```bash
+   tail -1 audit/evaluations.jsonl | jq '{run, kind, surface, pack: .pack.id, digest: .pack.digest}'
+   ```
+
+   Point at the members while narrating: the run id, the surface that decided, the SHA-256
+   of the exact pack bytes, and — open the full line if asked — the facts as evaluated and
+   the disposition in its §8.3 canonical form. *"This is not a log line. It is the decision,
+   with everything needed to run it again."*
+
+2. **The replay** (the closing beat of the whole demo). Take the newest single-pack record
+   and evaluate it back:
+
+   ```bash
+   REC=$(grep '"kind":"evaluation"' audit/evaluations.jsonl | tail -1)
+   echo "$REC" | jq '.inputs.facts'    > /tmp/replay-facts.json
+   echo "$REC" | jq '.inputs.evidence // {}' > /tmp/replay-evidence.json
+   jpack experimental evaluate packs/vendor-onboarding.pack.json \
+     --facts /tmp/replay-facts.json --evidence /tmp/replay-evidence.json
+   jq -c '.disposition' audit/evaluations.jsonl | tail -2 | uniq -c
+   ```
+
+   The replay itself is a decision, so it wrote its own line — and `uniq -c` shows `2` of
+   one disposition: the book just audited itself. *"Same bytes in, same judgment out, and
+   the trail proves it. That is the whole product in one line."*
+
+   (If the newest record came from a different pack, name that pack's file instead — the
+   record's `pack.id` says which document it was.)
+
+**Act 5 fallbacks**: `jq` missing → `tail -1 audit/evaluations.jsonl` raw; the line is
+readable. The book empty → run any act first; a fresh reset starts an empty book. An
+evaluation refusing with `JPS-AUDIT-WRITE` → something is occupying `audit/`;
+`./scripts/reset-demo.sh` and rerun.
+
 ## Fallbacks
 
 - **Agent says it has no MCP tools** (e.g. asked to "list your MCP tools") → it almost

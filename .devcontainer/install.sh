@@ -2,7 +2,7 @@
 # Install the pinned judgment-pack release into the devcontainer.
 set -euo pipefail
 
-JP_VERSION="${JUDGMENT_PACK_VERSION:-0.11.0}"
+JP_VERSION="${JUDGMENT_PACK_VERSION:-0.12.0}"
 case "$(uname -m)" in
   x86_64) ARCH=amd64 ;;
   aarch64 | arm64) ARCH=arm64 ;;
