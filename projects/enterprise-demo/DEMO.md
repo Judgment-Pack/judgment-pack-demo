@@ -335,6 +335,13 @@ evaluation refusing with `JPS-AUDIT-WRITE` → something is occupying `audit/`;
 
 ## Fallbacks
 
+- **Agent reports an unsupported configVersion — or reaches for an edit to `jpack.json`**
+  → the running container predates the checkout (a rebuild landed but the stack kept the
+  old image). Fix the sandbox, never the config: `docker compose up -d --build`, then
+  `docker compose up -d --force-recreate gateway`. An evaluation obtained by editing the
+  project's declarations is Act 4b's forgery lesson wearing different clothes — and it
+  writes no record. (Observed live: an agent sed'd the version down, evaluated, and
+  reverted; the microagent now forbids it, and jpack ≥0.12.0 refusals name the upgrade.)
 - **Agent says it has no MCP tools** (e.g. asked to "list your MCP tools") → it almost
   certainly has them; models are poor at enumerating their own tool set. Do not debug the
   stack — just give it work: "Call list_packs and show me what this project holds." If that
