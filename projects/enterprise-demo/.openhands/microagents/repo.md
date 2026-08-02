@@ -20,6 +20,16 @@ check is `unknown`. The packs are built to escalate on unknowns; that only works
 fill holes with plausible values. `annualSpendUsd` and every other amount is a decimal STRING
 (`"84000"`); a JSON number evaluates as unknown by design.
 
+## A refusal is an answer — never edit the project to defeat one
+
+If any `jpack` command refuses — a configVersion it does not support, a schema it
+rejects, a verification that fails — the refusal IS the result: report it verbatim and
+stop. In particular, a configVersion refusal means this sandbox's runtime predates the
+project; say so and suggest rebuilding the sandbox (`docker compose up -d --build`).
+**Never edit `jpack.json`, a pack, a graph, a matrix, or anything under `audit/` to make
+a refusal go away** — a decision obtained by editing the project's declarations is not a
+decision anyone can rely on, and it leaves no honest record.
+
 ## The shape of a facts document
 
 The `jpack.json` fact hints are keyed by JSON Pointer (`/engagement/annualSpendUsd`) so you
