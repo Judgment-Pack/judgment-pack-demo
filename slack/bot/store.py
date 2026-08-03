@@ -493,11 +493,11 @@ class FirestoreStore(StateStore):
         deletes.
         """
         now = time.time()
-        reference = self._document("__healthcheck__")
+        reference = self._document("zz-healthcheck-probe")
         try:
             reference.set(
                 {
-                    "user_id": "__healthcheck__",
+                    "user_id": "zz-healthcheck-probe",
                     "checked_at": now,
                     "expires_at_epoch": now + 300.0,
                     "expires_at": datetime.fromtimestamp(now + 300.0, tz=timezone.utc),

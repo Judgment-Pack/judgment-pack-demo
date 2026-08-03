@@ -31,6 +31,10 @@ import threading
 import time
 
 
+class InvalidArgument(Exception):
+    """The service refused the request itself — a reserved id, a bad field."""
+
+
 class AlreadyExists(Exception):
     """The name the real client's google.api_core exception carries."""
 
@@ -139,6 +143,14 @@ class FakeQuery:
 
 class FakeCollection(FakeQuery):
     def document(self, doc_id):
+        # The real service reserves ids of the form __name__ and refuses them
+        # with InvalidArgument. The first deployed revision died on exactly
+        # this — a probe named __healthcheck__ that every test accepted — so
+        # the fake now enforces the one naming rule production enforces.
+        if doc_id.startswith("__") and doc_id.endswith("__"):
+            raise InvalidArgument(
+                'Resource id "%s" is invalid because it is reserved.' % doc_id
+            )
         return FakeDocument(self._client, self._name, doc_id)
 
 

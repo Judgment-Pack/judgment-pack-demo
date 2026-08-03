@@ -540,7 +540,7 @@ def test_a_read_only_principal_fails_the_boot_healthcheck():
 def test_the_healthcheck_cleans_up_after_itself():
     client = FakeFirestore()
     build_backend(config(STATE_BACKEND="firestore"), client=client)
-    assert "__healthcheck__" not in client.documents("test-sessions")
+    assert "zz-healthcheck-probe" not in client.documents("test-sessions")
 
 
 # --- the containment guard -------------------------------------------------
@@ -587,3 +587,22 @@ def test_the_token_bucket_survives_a_backwards_clock():
     assert refill(0.0, updated_at=1000.0, now=1000.0, rate=0.01, capacity=20) == 0.0
     assert refill(2.0, updated_at=1000.0, now=1100.0, rate=0.01, capacity=20) == 3.0
     assert refill(19.5, updated_at=0.0, now=10_000.0, rate=0.01, capacity=20) == 20.0
+
+
+def test_the_fake_refuses_reserved_document_ids_like_production():
+    """The first deployed revision died on a probe named __healthcheck__ —
+    a reserved id every test accepted because the fake did not enforce the
+    rule. Production's naming rule now lives in the fake, and the probe id
+    must never match it."""
+    import pytest
+
+    from fake_firestore import FakeFirestore, InvalidArgument
+
+    client = FakeFirestore()
+    with pytest.raises(InvalidArgument):
+        client.collection("any").document("__reserved__")
+    # And the shipped probe id stays on the legal side of the rule.
+    from bot import store as store_module
+
+    source = open(store_module.__file__).read()
+    assert "__healthcheck__" not in source
