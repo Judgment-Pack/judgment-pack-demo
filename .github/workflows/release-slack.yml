@@ -1,0 +1,446 @@
+name: release-slack
+
+# Tag to live, with a human in the middle.
+#
+#   git tag slack-v0.3.0 && git push origin slack-v0.3.0
+#
+# feedback    unit tests and a local in-image dry run. Fast, useful, and NOT
+#             the shipping proof — it builds a different image than the one
+#             that ships. The real proof runs inside Cloud Build.
+# deploy      waits for a click on the `production` environment, then builds
+#             (the build runs the whole demo INSIDE the image before pushing
+#             it), deploys the resulting DIGEST with no traffic, smoke-tests
+#             that candidate revision, and only then shifts traffic to it.
+# smoke       confirms the promoted URL from outside.
+# wire-slack  optional: re-points the Slack app. Skipped entirely — gate
+#             included — unless SLACK_APP_ID is set.
+#
+# THE GATE IS NOT THIS FILE. The WIF provider is conditioned on the
+# `environment` claim GitHub emits only for a job that cleared the
+# environment's protection rules, so an unapproved run cannot mint a Google
+# credential at all. Workflow text is editable by anyone with push access;
+# federation policy is not.
+#
+# Third-party actions are pinned by commit SHA: a moved tag in the job that
+# holds `id-token: write` is arbitrary code with a credential.
+
+on:
+  push:
+    tags:
+      - "slack-v*"
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "Why are you deploying by hand?"
+        required: false
+
+# One release at a time, and never cancel one in flight: a half-applied Cloud
+# Run deployment is not a state anybody wants to reason about.
+concurrency:
+  group: release-slack
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  feedback:
+    name: Fast feedback (not the shipping proof)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: The unit suite (no Slack, no Google, no network)
+        run: |
+          python3 -m pip install --quiet 'pytest==8.3.4' 'pyyaml==6.0.2'
+          python3 -m pytest slack/ -q
+
+      - name: Build locally and run the demo inside it
+        run: |
+          # Fast feedback only. This image is thrown away: the artifact that
+          # ships is built and proven in Cloud Build, and deployed by digest.
+          docker build -f slack/Dockerfile -t judgment-pack-slack:feedback .
+          docker run --rm judgment-pack-slack:feedback python -m bot.dryrun --script
+
+  deploy:
+    name: Build, prove, deploy dark, smoke, promote
+    needs: feedback
+    runs-on: ubuntu-latest
+    # THE CLICK. Also the reason a credential exists at all: no approval, no
+    # `environment` claim, no federation, no deploy.
+    environment:
+      name: production
+      url: ${{ steps.promote.outputs.url }}
+    permissions:
+      contents: read
+      id-token: write # the OIDC token federated for a Google credential
+    outputs:
+      url: ${{ steps.promote.outputs.url }}
+      image: ${{ steps.build.outputs.image }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check the environment is configured
+        env:
+          PROJECT_ID: ${{ vars.PROJECT_ID }}
+          WIF_PROVIDER: ${{ vars.WIF_PROVIDER }}
+          DEPLOY_SA: ${{ vars.DEPLOY_SA }}
+          RUNTIME_SA: ${{ vars.RUNTIME_SA }}
+          BUILD_SA: ${{ vars.BUILD_SA }}
+        run: |
+          missing=""
+          for name in PROJECT_ID WIF_PROVIDER DEPLOY_SA RUNTIME_SA BUILD_SA; do
+            [ -n "${!name}" ] || missing="${missing} ${name}"
+          done
+          if [ -n "${missing}" ]; then
+            echo "::error::the production environment is missing:${missing}"
+            echo "Run slack/deploy/setup-wif.sh; it prints every value to paste."
+            exit 1
+          fi
+
+      - id: auth
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          # No service-account key anywhere: the workflow proves which
+          # repository AND which approved environment it is, and Google hands
+          # back a credential that lives minutes.
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.DEPLOY_SA }}
+
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+
+      - id: build
+        name: Build in Cloud Build — regionally, and prove the image there
+        env:
+          PROJECT_ID: ${{ vars.PROJECT_ID }}
+          REGION: ${{ vars.REGION || 'us-central1' }}
+          # The global pool is shared and can queue a build behind other
+          # people's work indefinitely; observed live, twice, with no
+          # diagnostic. The same build in a named region starts in seconds.
+          CLOUDBUILD_REGION: ${{ vars.CLOUDBUILD_REGION || vars.REGION || 'us-central1' }}
+          AR_REPO: ${{ vars.AR_REPO || 'judgment-pack' }}
+          SERVICE: ${{ vars.SERVICE || 'judgment-pack-slack-demo' }}
+          BUILD_SA: ${{ vars.BUILD_SA }}
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME#slack-}"
+          if [ "${TAG}" = "${GITHUB_REF_NAME}" ]; then
+            TAG="manual-$(date -u +%Y%m%d-%H%M%S)"
+          fi
+          # A tag reaches --substitutions, where a comma is a separator. Not a
+          # shell-injection path (every value here is a quoted parameter), but
+          # an unchecked control channel into the build config is not a thing
+          # to leave open.
+          case "${TAG}" in
+            ""|*[!0-9A-Za-z._-]*)
+              echo "::error::refusing tag ${GITHUB_REF_NAME}: expected slack-v[0-9A-Za-z._-]+"
+              exit 1 ;;
+          esac
+          IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/${SERVICE}:${TAG}"
+          echo "Building ${IMAGE}"
+
+          # cloudbuild.yaml runs `bot.dryrun --script` inside the built image
+          # and only then pushes it, so what lands in the registry has already
+          # run the whole demo. The digest is what gets deployed.
+          gcloud builds submit . \
+            --region "${CLOUDBUILD_REGION}" \
+            --config slack/deploy/cloudbuild.yaml \
+            --substitutions "_IMAGE=${IMAGE}" \
+            --service-account "projects/${PROJECT_ID}/serviceAccounts/${BUILD_SA}" \
+            --project "${PROJECT_ID}"
+
+          DIGEST="$(gcloud artifacts docker images describe "${IMAGE}" \
+                      --project "${PROJECT_ID}" --format='value(image_summary.digest)')"
+          case "${DIGEST}" in
+            sha256:*) : ;;
+            *) echo "::error::could not resolve a digest for ${IMAGE}"; exit 1 ;;
+          esac
+          PINNED="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/${SERVICE}@${DIGEST}"
+          echo "image=${PINNED}" >> "$GITHUB_OUTPUT"
+          echo "Proven and pushed: ${PINNED}"
+
+      - id: candidate
+        name: Deploy DARK — no traffic, tagged candidate
+        env:
+          PROJECT_ID: ${{ vars.PROJECT_ID }}
+          REGION: ${{ vars.REGION || 'us-central1' }}
+          SERVICE: ${{ vars.SERVICE || 'judgment-pack-slack-demo' }}
+          IMAGE: ${{ steps.build.outputs.image }}
+          RUNTIME_SA: ${{ vars.RUNTIME_SA }}
+          # The same shape deploy.sh uses, and for the same reasons: one
+          # instance because sessions, scratch projects and signing desks are
+          # local to it; CPU always allocated because the app answers Slack in
+          # milliseconds and does the real work after the 200.
+          MIN_INSTANCES: ${{ vars.MIN_INSTANCES || '1' }}
+          MAX_INSTANCES: ${{ vars.MAX_INSTANCES || '1' }}
+          CONCURRENCY: ${{ vars.CONCURRENCY || '20' }}
+          CPU: ${{ vars.CPU || '1' }}
+          MEMORY: ${{ vars.MEMORY || '512Mi' }}
+          TIMEOUT: ${{ vars.TIMEOUT || '300' }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-3.6-flash' }}
+          DEMO_PROJECT: ${{ vars.DEMO_PROJECT || '/opt/judgment-pack/enterprise-demo' }}
+          SESSION_ROOT: ${{ vars.SESSION_ROOT || '/tmp' }}
+          GATEWAY_AUTHORITY: ${{ vars.GATEWAY_AUTHORITY || 'gateway:judgment-pack-slack' }}
+          STATE_BACKEND: ${{ vars.STATE_BACKEND || 'firestore' }}
+          FIRESTORE_COLLECTION: ${{ vars.FIRESTORE_COLLECTION || 'slack-demo-sessions' }}
+          FIRESTORE_DATABASE: ${{ vars.FIRESTORE_DATABASE || '' }}
+          SESSION_TTL_SECONDS: ${{ vars.SESSION_TTL_SECONDS || '7200' }}
+        run: |
+          set -euo pipefail
+          # --no-traffic: the new revision starts, is proven, and only then
+          # takes traffic. If anything below fails, the PREVIOUS revision is
+          # still serving every Slack request — which is the whole difference
+          # between a smoke test and a post-mortem.
+          gcloud run deploy "${SERVICE}" \
+            --image "${IMAGE}" \
+            --region "${REGION}" \
+            --platform managed \
+            --service-account "${RUNTIME_SA}" \
+            --allow-unauthenticated \
+            --no-traffic --tag candidate \
+            --min-instances="${MIN_INSTANCES}" \
+            --max-instances="${MAX_INSTANCES}" \
+            --no-cpu-throttling \
+            --concurrency="${CONCURRENCY}" \
+            --cpu="${CPU}" \
+            --memory="${MEMORY}" \
+            --timeout="${TIMEOUT}" \
+            --set-secrets "SLACK_BOT_TOKEN=SLACK_BOT_TOKEN:latest,SLACK_SIGNING_SECRET=SLACK_SIGNING_SECRET:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest" \
+            --set-env-vars "GEMINI_MODEL=${GEMINI_MODEL},DEMO_PROJECT=${DEMO_PROJECT},SESSION_ROOT=${SESSION_ROOT},GATEWAY_AUTHORITY=${GATEWAY_AUTHORITY},STATE_BACKEND=${STATE_BACKEND},FIRESTORE_COLLECTION=${FIRESTORE_COLLECTION},SESSION_TTL_SECONDS=${SESSION_TTL_SECONDS},FIRESTORE_DATABASE=${FIRESTORE_DATABASE}" \
+            --project "${PROJECT_ID}" --quiet
+
+          CANDIDATE="$(gcloud run services describe "${SERVICE}" --region "${REGION}" \
+            --project "${PROJECT_ID}" \
+            --format='value(status.traffic.filter("tag:candidate").extract("url").flatten())')"
+          [ -n "${CANDIDATE}" ] || { echo "::error::no candidate URL"; exit 1; }
+          echo "candidate=${CANDIDATE}" >> "$GITHUB_OUTPUT"
+          echo "Candidate revision serving no traffic at ${CANDIDATE}"
+
+      - name: Smoke-test the candidate BEFORE it takes traffic
+        env:
+          CANDIDATE: ${{ steps.candidate.outputs.candidate }}
+          STATE_BACKEND: ${{ vars.STATE_BACKEND || 'firestore' }}
+        run: |
+          set -euo pipefail
+          body="$(curl -fsS --max-time 60 "${CANDIDATE}/")"
+          echo "${body}"
+          case "${body}" in
+            *"judgment-pack slack demo: up"*) ;;
+            *) echo "::error::unexpected banner from ${CANDIDATE}/"; exit 1 ;;
+          esac
+          # The banner is identical whether the state backend is healthy or
+          # degraded — the endpoint reports which, and a release that ships a
+          # service which cannot reach its own session store is a release that
+          # forgets everybody's progress.
+          health="$(curl -fsS --max-time 60 "${CANDIDATE}/healthz")"
+          echo "${health}"
+          case "${health}" in
+            *DEGRADED*) echo "::error::state backend degraded on the candidate"; exit 1 ;;
+            *"state=${STATE_BACKEND} ok"*) echo "state backend ok" ;;
+            *) echo "::error::could not read the state backend status"; exit 1 ;;
+          esac
+          # The signature is this app's whole authentication. A 200 here would
+          # mean anybody on the internet can drive the demo.
+          code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 60 \
+                    -X POST -H 'Content-Type: application/json' \
+                    -d '{"type":"url_verification","challenge":"ci"}' \
+                    "${CANDIDATE}/slack/events")"
+          echo "unsigned POST /slack/events -> ${code}"
+          [ "${code}" = "401" ] || { echo "::error::expected 401, got ${code}"; exit 1; }
+
+      - name: The service must be reachable, not merely deployed
+        env:
+          PROJECT_ID: ${{ vars.PROJECT_ID }}
+          REGION: ${{ vars.REGION || 'us-central1' }}
+          SERVICE: ${{ vars.SERVICE || 'judgment-pack-slack-demo' }}
+        run: |
+          set -euo pipefail
+          # An org policy (iam.allowedPolicyMemberDomains) can refuse the
+          # allUsers binding while `--allow-unauthenticated` still reports
+          # success — the deploy looks clean and Google's front end answers
+          # every Slack request with a 403. Observed live. Ask for the ROLE
+          # and the MEMBER together: any allUsers binding on any role would
+          # otherwise satisfy a plain grep.
+          members="$(gcloud run services get-iam-policy "${SERVICE}" \
+            --region "${REGION}" --project "${PROJECT_ID}" \
+            --flatten='bindings[].members' \
+            --filter='bindings.role=roles/run.invoker AND bindings.members=allUsers' \
+            --format='value(bindings.members)')"
+          if [ -n "${members}" ]; then
+            echo "public invoker binding present"
+            exit 0
+          fi
+          echo "::error::the allUsers invoker binding is missing — Slack cannot reach this service"
+          # printf, not a heredoc: a heredoc body would have to be indented to
+          # stay valid YAML, and an indented `YAML` terminator makes the
+          # printed remedy swallow the commands that follow it. What comes out
+          # of these lines is at column 0 and pastes into a shell as-is.
+          printf '%s\n' \
+            'The usual cause is the org policy iam.allowedPolicyMemberDomains.' \
+            'Override it for this project, wait for propagation, and re-run.' \
+            'Copy from the next line:' \
+            '' \
+            "cat > /tmp/allow-all.yaml <<'YAML'" \
+            'constraint: constraints/iam.allowedPolicyMemberDomains' \
+            'listPolicy:' \
+            '  allValues: ALLOW' \
+            'YAML' \
+            "gcloud resource-manager org-policies set-policy /tmp/allow-all.yaml --project ${PROJECT_ID}" \
+            'sleep 120   # policy changes take a minute or two to propagate' \
+            "gcloud run services add-iam-policy-binding ${SERVICE} --region ${REGION} --member=allUsers --role=roles/run.invoker --project ${PROJECT_ID}"
+          exit 1
+
+      - id: promote
+        name: Promote — the proven revision takes traffic
+        env:
+          PROJECT_ID: ${{ vars.PROJECT_ID }}
+          REGION: ${{ vars.REGION || 'us-central1' }}
+          SERVICE: ${{ vars.SERVICE || 'judgment-pack-slack-demo' }}
+        run: |
+          set -euo pipefail
+          gcloud run services update-traffic "${SERVICE}" \
+            --region "${REGION}" --to-latest \
+            --project "${PROJECT_ID}" --quiet
+          URL="$(gcloud run services describe "${SERVICE}" --region "${REGION}" \
+                   --project "${PROJECT_ID}" --format='value(status.url)')"
+          echo "url=${URL}" >> "$GITHUB_OUTPUT"
+          echo "Promoted. Live at ${URL}"
+
+  smoke:
+    name: Confirm the promoted URL
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: The live URL answers, and refuses an unsigned request
+        env:
+          URL: ${{ needs.deploy.outputs.url }}
+          STATE_BACKEND: ${{ vars.STATE_BACKEND || 'firestore' }}
+        run: |
+          set -euo pipefail
+          body="$(curl -fsS --max-time 60 "${URL}/")"
+          echo "${body}"
+          case "${body}" in
+            *"judgment-pack slack demo: up"*) ;;
+            *) echo "::error::unexpected banner from ${URL}/"; exit 1 ;;
+          esac
+          case "${body}" in
+            *DEGRADED*) echo "::error::live service reports a degraded state backend"; exit 1 ;;
+          esac
+          code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 60 \
+                    -X POST -H 'Content-Type: application/json' \
+                    -d '{"type":"url_verification","challenge":"ci"}' \
+                    "${URL}/slack/events")"
+          echo "unsigned POST /slack/events -> ${code}"
+          [ "${code}" = "401" ] || { echo "::error::expected 401, got ${code}"; exit 1; }
+
+  wire-slack:
+    name: Point the Slack app at this URL
+    needs: [deploy, smoke]
+    # Job-level, so GitHub can decide BEFORE queuing: no app id, nothing to
+    # re-point, job skipped entirely. A step-level condition would still have
+    # queued the job — and an environment gate on it would still have asked
+    # for a second click.
+    if: ${{ vars.SLACK_APP_ID != '' }}
+    runs-on: ubuntu-latest
+    # Deliberately NO `environment:`. The two Slack config tokens are
+    # REPOSITORY secrets; an environment secret would drag this job through
+    # the approval gate a second time on every release.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - id: check
+        name: What can this run actually do?
+        env:
+          SLACK_CONFIG_TOKEN: ${{ secrets.SLACK_CONFIG_TOKEN }}
+          SLACK_CONFIG_REFRESH_TOKEN: ${{ secrets.SLACK_CONFIG_REFRESH_TOKEN }}
+          GH_ADMIN_TOKEN: ${{ secrets.GH_ADMIN_TOKEN }}
+        run: |
+          if [ -z "${SLACK_CONFIG_TOKEN}" ] && [ -z "${SLACK_CONFIG_REFRESH_TOKEN}" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No Slack config tokens: skipping. The URL to paste by hand is"
+            echo "::notice::in the deploy job's summary; SETUP.md has the three fields."
+            exit 0
+          fi
+          echo "configured=true" >> "$GITHUB_OUTPUT"
+          if [ -n "${GH_ADMIN_TOKEN}" ]; then
+            echo "can_rotate=true" >> "$GITHUB_OUTPUT"
+          else
+            # Without somewhere to PUT a new token pair, rotating would burn
+            # the credential: Slack invalidates the old refresh token the
+            # instant it issues a new one.
+            echo "can_rotate=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::GH_ADMIN_TOKEN is not set, so this run will not rotate the"
+            echo "::warning::Slack config token. If it has expired (they last 12h), the"
+            echo "::warning::wiring is skipped and the notice below says how to rotate."
+          fi
+
+      - name: Rotate the config token FIRST, and store it before using it
+        if: steps.check.outputs.configured == 'true' && steps.check.outputs.can_rotate == 'true'
+        env:
+          SLACK_CONFIG_REFRESH_TOKEN: ${{ secrets.SLACK_CONFIG_REFRESH_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_ADMIN_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Order is the whole point: rotate, PERSIST, then use. Rotating
+          # after a successful call — or persisting after one that failed —
+          # leaves the stored pair dead with nothing said.
+          python3 slack/deploy/slack-app.py rotate \
+            --refresh-out "${RUNNER_TEMP}/refresh" --token-out "${RUNNER_TEMP}/token"
+          gh secret set SLACK_CONFIG_REFRESH_TOKEN < "${RUNNER_TEMP}/refresh"
+          gh secret set SLACK_CONFIG_TOKEN < "${RUNNER_TEMP}/token"
+          echo "rotated and stored both halves"
+
+      - id: wire
+        name: Re-point the app
+        if: steps.check.outputs.configured == 'true'
+        env:
+          SLACK_CONFIG_TOKEN: ${{ secrets.SLACK_CONFIG_TOKEN }}
+          SLACK_CONFIG_REFRESH_TOKEN: ${{ secrets.SLACK_CONFIG_REFRESH_TOKEN }}
+          URL: ${{ needs.deploy.outputs.url }}
+          APP_ID: ${{ vars.SLACK_APP_ID }}
+          CAN_ROTATE: ${{ steps.check.outputs.can_rotate }}
+        run: |
+          set -uo pipefail
+          # No pip install in the job that holds the Slack tokens: update-url
+          # reads Slack's JSON export and needs no YAML at all.
+          args=(update-url --app "${APP_ID}" --url "${URL}")
+          if [ "${CAN_ROTATE}" = "true" ]; then
+            args+=(--refresh-out "${RUNNER_TEMP}/refresh-2")
+          else
+            args+=(--no-rotate)
+          fi
+          set +e
+          python3 slack/deploy/slack-app.py "${args[@]}"
+          code=$?
+          set -e
+          echo "exit=${code}" >> "$GITHUB_OUTPUT"
+          if [ "${code}" = "3" ]; then
+            echo "::warning::The Slack config token is expired and this run may not rotate it."
+            exit 0
+          fi
+          exit "${code}"
+
+      - name: What to do about the token, whatever happened above
+        # always(), because the case that matters most is a rotation followed
+        # by a FAILED update: the stored pair is dead, and nothing else would
+        # have said so.
+        if: always() && steps.check.outputs.configured == 'true'
+        env:
+          CAN_ROTATE: ${{ steps.check.outputs.can_rotate }}
+          WIRE_EXIT: ${{ steps.wire.outputs.exit }}
+          URL: ${{ needs.deploy.outputs.url }}
+        run: |
+          if [ "${CAN_ROTATE}" = "true" ]; then
+            if [ -s "${RUNNER_TEMP}/refresh-2" ]; then
+              echo "::warning::A SECOND rotation happened during the call. Store it:"
+              echo "::warning::  gh secret set SLACK_CONFIG_REFRESH_TOKEN < <the runner file>"
+              echo "::warning::(the value is not printed, and the runner file is gone after this job)"
+            fi
+            rm -f "${RUNNER_TEMP}/refresh" "${RUNNER_TEMP}/token" "${RUNNER_TEMP}/refresh-2" || true
+          elif [ "${WIRE_EXIT}" = "3" ] || [ -z "${WIRE_EXIT}" ]; then
+            echo "::warning::Slack wiring did not run. Rotate where you can store the result:"
+            echo "::warning::  python3 slack/deploy/slack-app.py rotate \\"
+            echo "::warning::    --refresh-out ./slack-refresh-token --token-out ./slack-token"
+            echo "::warning::then update the SLACK_CONFIG_TOKEN / SLACK_CONFIG_REFRESH_TOKEN"
+            echo "::warning::secrets, or point the app by hand at ${URL}/slack/events"
+          fi
