@@ -4,15 +4,22 @@
 #   ./slack/deploy/deploy.sh
 #
 # What it does, in order: enables the five APIs it needs, makes an Artifact
-# Registry repository if there is none, creates the three secrets in Secret
-# Manager if they do not exist (reading them from your terminal WITHOUT
-# echoing, never from a file it leaves behind), grants the service account
-# read access to them, builds the image with Cloud Build from the repository
-# root, deploys one Cloud Run revision pinned to a single instance, and prints
-# the URL to paste into the Slack app.
+# Registry repository if there is none (retrying, because a freshly enabled API
+# can refuse the first create while it provisions), creates the three secrets in
+# Secret Manager if they do not exist (reading them from your terminal WITHOUT
+# echoing, never from a file it leaves behind), grants the runtime account read
+# access to them AND the three roles the BUILD's identity needs, sets up
+# Firestore, builds the image with Cloud Build IN A REGION (the global pool can
+# queue a build indefinitely with no diagnostic), deploys one Cloud Run revision
+# pinned to a single instance, VERIFIES the service is actually reachable, and
+# prints the URL to paste into the Slack app.
 #
 # Re-running is safe: everything is idempotent, and existing secrets are left
 # alone (rotate with `gcloud secrets versions add`).
+#
+# For an automated release instead — tag, approve, live — see
+# .github/workflows/release-slack.yml and slack/deploy/setup-wif.sh. This
+# script stays the manual path, and the two share every flag that matters.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -28,6 +35,12 @@ DEPLOY_ENV="${DEPLOY_ENV:-${here}/deploy.env}"
 
 SERVICE="${SERVICE:-judgment-pack-slack-demo}"
 REGION="${REGION:-us-central1}"
+# Cloud Build's GLOBAL pool is shared, and a busy one can leave a build QUEUED
+# with no diagnostic and no timeout — observed twice on this project, both
+# times cleared by naming a region, where the same build starts in seconds.
+# Regional by default, therefore, and overridable for a project whose region
+# has no Cloud Build.
+CLOUDBUILD_REGION="${CLOUDBUILD_REGION:-${REGION}}"
 AR_REPO="${AR_REPO:-judgment-pack}"
 GEMINI_MODEL="${GEMINI_MODEL:-gemini-3.6-flash}"
 PROJECT_ID="${PROJECT_ID:-$(gcloud config get-value project 2>/dev/null)}"
@@ -50,9 +63,21 @@ SESSION_TTL_SECONDS="${SESSION_TTL_SECONDS:-7200}"
 # Empty means the project's (default) database, which is what deploy.sh
 # creates. Set FIRESTORE_DATABASE when the default one is Datastore mode.
 FIRESTORE_DATABASE="${FIRESTORE_DATABASE:-}"
+# Three identities, three jobs — never the project's default compute account,
+# which usually carries roles/editor and would then be what an internet-facing
+# container runs as. setup-wif.sh creates all three for the CI path; this
+# script creates whichever are missing for the manual one.
+RUNTIME_SA_NAME="${RUNTIME_SA_NAME:-jpack-slack-runtime}"
+BUILD_SA_NAME="${BUILD_SA_NAME:-jpack-slack-builder}"
 
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 die() { printf '\nERROR: %s\n' "$*" >&2; exit 1; }
+
+# One scratch file, made unpredictably and removed on every exit path. The
+# predictable /tmp/<name>.$$ this replaces was a symlink waiting to happen on
+# a shared host, and needed an rm on each of six branches.
+scratch="$(mktemp)"
+trap 'rm -f "${scratch}"' EXIT
 
 command -v gcloud >/dev/null || die "gcloud is not installed — https://cloud.google.com/sdk/docs/install"
 # Checked once, here: every gcloud call below needs a live token, and an
@@ -75,15 +100,42 @@ gcloud services enable \
   --project "${PROJECT_ID}" --quiet
 
 say "2/7 Artifact Registry repository"
-if ! gcloud artifacts repositories describe "${AR_REPO}" \
+if gcloud artifacts repositories describe "${AR_REPO}" \
       --location "${REGION}" --project "${PROJECT_ID}" >/dev/null 2>&1; then
-  gcloud artifacts repositories create "${AR_REPO}" \
-    --repository-format=docker --location="${REGION}" \
-    --description="judgment-pack demo images" \
-    --project "${PROJECT_ID}" --quiet
-  echo "created ${AR_REPO}"
+  echo "  ${AR_REPO} exists"
 else
-  echo "${AR_REPO} exists"
+  # Enabling an API and using it are not the same instant. On a fresh project
+  # the first `repositories create` can be refused for minutes while Artifact
+  # Registry finishes provisioning — a real failure that fixes itself. Three
+  # tries, a minute apart, then give up with the reason rather than leaving
+  # somebody to guess whether their gcloud is broken.
+  created=""
+  for attempt in 1 2 3; do
+    if gcloud artifacts repositories create "${AR_REPO}" \
+         --repository-format=docker --location="${REGION}" \
+         --description="judgment-pack demo images" \
+         --project "${PROJECT_ID}" --quiet 2>"${scratch}"; then
+      created="yes"
+      echo "  created ${AR_REPO}"
+      break
+    fi
+    if grep -qiE "already exists|ALREADY_EXISTS" "${scratch}"; then
+      created="yes"
+      echo "  ${AR_REPO} exists"
+      break
+    fi
+    if [ "${attempt}" -lt 3 ]; then
+      echo "  attempt ${attempt} refused — Artifact Registry is usually still"
+      echo "  provisioning right after the API is enabled; retrying in 60s"
+      sed 's/^/    /' "${scratch}" >&2 || true
+      sleep 60
+    fi
+  done
+  if [ -z "${created}" ]; then
+    cat "${scratch}" >&2
+    die "could not create the Artifact Registry repository ${AR_REPO} in ${REGION}
+  after three attempts. If the API was just enabled, wait a few minutes and re-run."
+  fi
 fi
 
 # --- secrets ---------------------------------------------------------------
@@ -129,7 +181,26 @@ ensure_secret SLACK_SIGNING_SECRET "Slack app → Basic Information → Signing 
 ensure_secret GEMINI_API_KEY      "Google AI Studio → API key (this powers narration and drafting only)"
 
 project_number="$(gcloud projects describe "${PROJECT_ID}" --format='value(projectNumber)')"
-runtime_sa="${RUNTIME_SA:-${project_number}-compute@developer.gserviceaccount.com}"
+compute_sa="${project_number}-compute@developer.gserviceaccount.com"
+
+# Two robots, two jobs, and NEITHER is the project's default compute account —
+# which usually carries roles/editor, and which an unconfigured Cloud Run
+# service would otherwise run as. An internet-facing container holding
+# registry write could poison the very image it is deployed from.
+ensure_sa() {
+  local name="$1" description="$2"
+  local email="${name}@${PROJECT_ID}.iam.gserviceaccount.com"
+  gcloud iam service-accounts describe "${email}" --project "${PROJECT_ID}" >/dev/null 2>&1 \
+    || gcloud iam service-accounts create "${name}" --display-name="${description}" \
+         --project "${PROJECT_ID}" --quiet
+  printf '%s' "${email}"
+}
+runtime_sa="${RUNTIME_SA:-$(ensure_sa "${RUNTIME_SA_NAME}" "Slack demo — Cloud Run runtime identity")}"
+build_sa="${BUILD_SA:-$(ensure_sa "${BUILD_SA_NAME}" "Slack demo — Cloud Build identity")}"
+echo "  runtime: ${runtime_sa}"
+echo "  build:   ${build_sa}"
+
+# RUNTIME: the three secrets, and (below) Firestore. Nothing else.
 for secret in SLACK_BOT_TOKEN SLACK_SIGNING_SECRET GEMINI_API_KEY; do
   gcloud secrets add-iam-policy-binding "${secret}" \
     --member="serviceAccount:${runtime_sa}" \
@@ -137,6 +208,31 @@ for secret in SLACK_BOT_TOKEN SLACK_SIGNING_SECRET GEMINI_API_KEY; do
     --project "${PROJECT_ID}" --quiet >/dev/null
 done
 echo "  ${runtime_sa} may read the three secrets"
+
+# BUILD: write logs, read the staged source, push to THIS repository only. On
+# a new project a build identity holds nothing at all, and the first build
+# fails while reading the source it was just handed — which reads like a
+# broken script and is really three missing grants.
+gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
+  --member="serviceAccount:${build_sa}" --role=roles/logging.logWriter \
+  --condition=None --quiet >/dev/null
+gcloud artifacts repositories add-iam-policy-binding "${AR_REPO}" \
+  --location="${REGION}" --member="serviceAccount:${build_sa}" \
+  --role=roles/artifactregistry.writer --project "${PROJECT_ID}" --quiet >/dev/null
+for bucket in "gs://${PROJECT_ID}_cloudbuild" "gs://${PROJECT_ID}_${CLOUDBUILD_REGION}_cloudbuild"; do
+  gcloud storage buckets add-iam-policy-binding "${bucket}" \
+    --member="serviceAccount:${build_sa}" --role=roles/storage.objectViewer \
+    --project "${PROJECT_ID}" --quiet >/dev/null 2>&1 || true
+done
+echo "  ${build_sa} may write build logs, read staged source, and push to ${AR_REPO}"
+
+# And take back what older versions of this script gave the compute default.
+for role in roles/storage.objectViewer roles/logging.logWriter roles/artifactregistry.writer; do
+  gcloud projects remove-iam-policy-binding "${PROJECT_ID}" \
+    --member="serviceAccount:${compute_sa}" --role="${role}" \
+    --condition=None --quiet >/dev/null 2>&1 \
+    && echo "  removed ${role} from ${compute_sa} (it has no job here)"
+done
 
 # --- session state ---------------------------------------------------------
 # Firestore holds session METADATA — where a user is in the demo — so a
@@ -168,18 +264,16 @@ if [ "${STATE_BACKEND}" = "firestore" ]; then
     # A project gets one default database, and creating a second time is an
     # error rather than a no-op: tolerate exactly that.
     if gcloud firestore databases create --location="${REGION}" \
-         --type=firestore-native --project "${PROJECT_ID}" --quiet 2>/tmp/fs-create.$$; then
+         --type=firestore-native --project "${PROJECT_ID}" --quiet 2>"${scratch}"; then
       echo "  created a Native-mode database in ${REGION}"
     else
-      if grep -qiE "already exists|ALREADY_EXISTS" /tmp/fs-create.$$; then
+      if grep -qiE "already exists|ALREADY_EXISTS" "${scratch}"; then
         echo "  database already exists"
       else
-        cat /tmp/fs-create.$$ >&2
-        rm -f /tmp/fs-create.$$
+        cat "${scratch}" >&2
         die "could not create the Firestore database"
       fi
     fi
-    rm -f /tmp/fs-create.$$
   fi
 
   gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
@@ -224,10 +318,15 @@ fi
 TAG="$(date -u +%Y%m%d-%H%M%S)"
 IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/${SERVICE}:${TAG}"
 
-say "5/7 Building ${IMAGE} (context: ${root})"
+say "5/7 Building ${IMAGE} in ${CLOUDBUILD_REGION} (context: ${root})"
+# The build runs as its OWN identity, and cloudbuild.yaml proves the image by
+# running the whole demo inside it before `images:` is pushed — so a build
+# whose demo fails publishes nothing.
 gcloud builds submit "${root}" \
+  --region "${CLOUDBUILD_REGION}" \
   --config "${here}/cloudbuild.yaml" \
   --substitutions "_IMAGE=${IMAGE}" \
+  --service-account "projects/${PROJECT_ID}/serviceAccounts/${build_sa}" \
   --project "${PROJECT_ID}"
 
 # --- deploy ----------------------------------------------------------------
@@ -249,6 +348,7 @@ gcloud run deploy "${SERVICE}" \
   --image "${IMAGE}" \
   --region "${REGION}" \
   --platform managed \
+  --service-account "${runtime_sa}" \
   --allow-unauthenticated \
   --min-instances="${MIN_INSTANCES}" \
   --max-instances="${MAX_INSTANCES}" \
@@ -263,6 +363,67 @@ gcloud run deploy "${SERVICE}" \
 
 URL="$(gcloud run services describe "${SERVICE}" --region "${REGION}" \
         --project "${PROJECT_ID}" --format='value(status.url)')"
+
+# --- is it actually reachable? ---------------------------------------------
+# `--allow-unauthenticated` asks for an allUsers invoker binding. An
+# organization policy (iam.allowedPolicyMemberDomains) can refuse that binding
+# while the deploy still reports success — and then Google's front end answers
+# every Slack request with a 403 before the container sees it. Observed live:
+# a green deploy and an unreachable service. So the binding is CHECKED, and a
+# missing one is a failure with the remedy, not a URL nobody can call.
+#
+# The check asks for the ROLE and the MEMBER together. Grepping the policy for
+# "allUsers" alone passes on any allUsers binding at all — roles/run.viewer,
+# say — and would report a service reachable while every request still 403s.
+invoker_members="$(gcloud run services get-iam-policy "${SERVICE}" \
+  --region "${REGION}" --project "${PROJECT_ID}" \
+  --flatten='bindings[].members' \
+  --filter='bindings.role=roles/run.invoker AND bindings.members=allUsers' \
+  --format='value(bindings.members)' 2>"${scratch}")" || {
+    cat "${scratch}" >&2
+    die "could not read the IAM policy of ${SERVICE} — that is a permissions or API
+  problem, NOT the org policy below; fix it before reading further."
+  }
+
+if [ -z "${invoker_members}" ]; then
+  echo "  public invoker binding missing — trying to add it"
+  if ! gcloud run services add-iam-policy-binding "${SERVICE}" \
+        --region "${REGION}" --member=allUsers --role=roles/run.invoker \
+        --project "${PROJECT_ID}" --quiet >/dev/null 2>"${scratch}"; then
+    printf '\n%s\n' "$(cat "${scratch}")" >&2
+    # Printed at column 0, deliberately: the heredoc inside this remedy needs
+    # its terminator unindented, and an indented copy silently swallows both
+    # gcloud commands into the YAML file.
+    cat >&2 <<REMEDY
+
+The service deployed, and Slack cannot reach it: without an allUsers invoker
+binding every request is refused by Google's front end with a 403, before the
+container is involved. The usual cause is the organization policy
+constraints/iam.allowedPolicyMemberDomains.
+
+Override it for THIS project, then re-bind — copy from here to the blank line:
+
+cat > /tmp/allow-all.yaml <<'YAML'
+constraint: constraints/iam.allowedPolicyMemberDomains
+listPolicy:
+  allValues: ALLOW
+YAML
+gcloud resource-manager org-policies set-policy /tmp/allow-all.yaml --project ${PROJECT_ID}
+sleep 120   # policy changes take a minute or two to propagate
+gcloud run services add-iam-policy-binding ${SERVICE} --region ${REGION} \
+  --member=allUsers --role=roles/run.invoker --project ${PROJECT_ID}
+
+Or simply re-run this script once the policy has propagated; everything before
+this point is idempotent.
+
+REMEDY
+    die "deployed, but unreachable — see the remedy above (exiting non-zero on
+  purpose: a URL nobody can call is not a successful deployment)"
+  fi
+  echo "  public invoker binding added"
+else
+  echo "  public invoker binding present"
+fi
 
 say "7/7 Done. Paste this ONE url into three fields of the Slack app:"
 cat <<EOF

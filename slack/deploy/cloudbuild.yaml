@@ -2,17 +2,42 @@
 #
 # The build context is the repository root (the image needs projects/ and
 # attestation/ beside slack/), so the Dockerfile is named with -f rather than
-# found by convention. deploy.sh substitutes _IMAGE.
+# found by convention. deploy.sh and the release workflow substitute _IMAGE.
+#
+# Two steps, and the second is the point: the image is PROVEN HERE, by running
+# the whole demo inside the artifact that is about to be pushed. `images:` is
+# published only after every step succeeds, so a build whose demo fails pushes
+# nothing — the proof and the shipping become one act, rather than two builds
+# of the same Dockerfile hoping to agree with each other.
 steps:
   - name: gcr.io/cloud-builders/docker
+    id: build
     args:
       - build
       - --file=slack/Dockerfile
       - --tag=${_IMAGE}
       - .
+
+  - name: gcr.io/cloud-builders/docker
+    id: prove
+    # Four use cases against the real jpack binary and a real gateway, with a
+    # canned model: 1 -> 3 -> 4 -> 2, asserting approve, reject, unresolved,
+    # a signed receipt, a withheld forgery and a byte-exact replay. No
+    # configuration, no network, no secrets — the memory state backend.
+    args:
+      - run
+      - --rm
+      - ${_IMAGE}
+      - python
+      - -m
+      - bot.dryrun
+      - --script
+
 images:
   - ${_IMAGE}
 options:
+  # Required when the build runs as a user-managed service account: with a
+  # custom identity Cloud Build will not write to the default logs bucket.
   logging: CLOUD_LOGGING_ONLY
   machineType: E2_HIGHCPU_8
 timeout: 1800s

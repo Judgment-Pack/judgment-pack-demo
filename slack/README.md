@@ -17,7 +17,18 @@ progress survives a restart or a redeploy, while the scratch project and the sig
 belong to whichever container is running — are rebuilt, and whatever cannot be rebuilt is said out
 loud rather than pretended.
 
-- **Deploying it:** [SETUP.md](SETUP.md) — 8 human steps, about 15 minutes.
+**Tag to live, in five lines:**
+
+```bash
+./slack/deploy/deploy.sh             # once: secrets, registry, database, first revision
+./slack/deploy/setup-wif.sh          # once: federation, no service-account key
+#  … paste the printed vars into GitHub → Environments → production (+ the slack-v* tag rule)
+git tag slack-v0.3.0 && git push origin slack-v0.3.0
+#  … you click approve → Cloud Build builds AND runs the demo inside the image
+#  … the digest deploys with no traffic, is smoke-tested, and only then promoted
+```
+
+- **Deploying it:** [SETUP.md](SETUP.md) — two human moments, then a tag and a click.
 - **How it is built and why:** [DESIGN.md](DESIGN.md) — the architecture, the model/runtime
   boundary, the security choices with their reasons, what persists and what cannot, and the
   non-goals.

@@ -240,6 +240,84 @@ trying; the always-allocated Cloud Run instance remains the only real line item.
 | Public Cloud Run service (`--allow-unauthenticated`) | Slack posts from the internet; the signature is the authentication, checked before any handler runs. `GET /` answers a boring "up" for health checks and nothing else. |
 | A threading WSGI server from the stdlib, not bolt's single-threaded dev server | Bolt's `App.start()` is documented as development-only and serial. This is the same stdlib machinery with threading mixed in — honest for one instance. Gunicorn in front of the same WSGI app is the upgrade, and needs no code change. |
 
+## Release: tag, gate, live
+
+```
+git tag slack-vX.Y.Z
+        │
+        ▼
+ feedback ─────── unit tests, plus a local image with the demo run inside it.
+        │         Fast, useful, and thrown away: it is FEEDBACK, not the proof.
+        ▼
+   ┌─ production environment gate ─┐   ← a human clicks
+   └───────────────┬───────────────┘
+        ▼                    the click is what MINTS THE CREDENTIAL: no
+   deploy ───────── OIDC     approval → no `environment` claim → federation
+        │           refuses → no deploy. Not workflow text; policy.
+        │
+        │  gcloud builds submit --region …      (regional: the global pool
+        │      └─ step 1: docker build           has queued builds forever)
+        │      └─ step 2: run the whole demo INSIDE the built image
+        │         └─ images: pushed only if BOTH steps pass
+        │  resolve the DIGEST, deploy it with --no-traffic --tag candidate
+        │  smoke the CANDIDATE: banner, /healthz not DEGRADED, unsigned 401
+        │  verify the allUsers invoker binding (role AND member)
+        │  update-traffic --to-latest        ← only now does traffic move
+        ▼
+   smoke ────────── confirm the promoted URL from outside
+        ▼
+   wire-slack ───── apps.manifest.update: the app's URLs point here
+                    (skipped at the JOB level unless SLACK_APP_ID is set)
+```
+
+**The gate is federation, not a YAML line.** `setup-wif.sh` conditions the OIDC provider on
+`assertion.repository == '<repo>' && assertion.environment == 'production'`. GitHub emits the
+`environment` claim only for a job that cleared that environment's protection rules, so an
+unapproved run — or a run from a branch the environment's tag rule excludes — cannot obtain a
+Google credential at all. An earlier version conditioned on the repository alone, which made the
+approval decoration: the two values needed to bypass it (`WIF_PROVIDER`, `DEPLOY_SA`) are
+deliberately non-secret.
+
+**Proven is shipped.** The image is built and the demo is run *inside it* in the same Cloud Build,
+and `images:` publishes only after every step passes — so nothing reaches the registry without
+having run four use cases against the real binaries. The deploy then resolves that image's
+**digest** and deploys `@sha256:…`. Building twice and hoping the two agree is not artifact
+identity: this Dockerfile pins base images by tag and resolves Python dependencies at build time.
+
+**Dark, then promoted.** The revision starts with no traffic under a `candidate` tag, is proven on
+its own URL, and only then takes traffic. A regression in the unsigned-request check used to be
+discovered while that revision was already serving every Slack request, with no rollback anywhere
+in the pipeline; now a failure leaves the previous revision serving.
+
+**Three identities, three jobs.** The deployer submits builds and rolls revisions. The builder
+runs the build — log writer, staged-source reader, and Artifact Registry writer **scoped to one
+repository**. The runtime is what the public container runs as: read three secrets, use Firestore,
+nothing else. They used to be one account — the project's default compute service account, which
+usually carries `roles/editor` — so an internet-facing container held registry write on the very
+path it was deployed from. `setup-wif.sh` now removes those grants where earlier versions left
+them.
+
+**Why regional Cloud Build.** The global pool is shared, and a busy one leaves builds `QUEUED`
+with no diagnostic and no timeout — twice on this project, indefinitely, until the same build was
+resubmitted with `--region` and started in seconds.
+
+**Why the deploy verifies its own reachability.** `--allow-unauthenticated` asks for an `allUsers`
+invoker binding, and an organization policy can refuse that binding while the deploy still reports
+success: a green pipeline and a service answering every Slack request with a 403 from Google's
+front end. Both paths check for the **role and the member together** — any `allUsers` binding on
+any role would satisfy a plain grep — and print a copy-pasteable remedy.
+
+**Rotation is a hazard, and it is treated as one.** Slack's config tokens live twelve hours, and
+issuing a new one kills the previous refresh token immediately. So the tool refuses to rotate
+unless it is given somewhere to write the result (`--refresh-out`), and CI rotates only when
+`GH_ADMIN_TOKEN` lets it store the new pair **before** using it. Without that token the wiring is
+skipped with instructions rather than burning the credential to do an optional job.
+
+**What is deliberately still manual.** Minting a Slack configuration token, granting workspace
+consent, and setting the environment's tag rule. All three are human authorizations; automating
+them would mean holding a credential that can create apps in somebody's workspace, or edit the
+rule that gates the credential itself.
+
 ## Testing
 
 * `python3 -m pytest slack/` — the menu and remaining-options logic, event de-duplication, the
