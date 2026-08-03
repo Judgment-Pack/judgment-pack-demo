@@ -28,6 +28,11 @@ say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 die() { printf '\nERROR: %s\n' "$*" >&2; exit 1; }
 
 command -v gcloud >/dev/null || die "gcloud is not installed — https://cloud.google.com/sdk/docs/install"
+# Checked once, here: every gcloud call below needs a live token, and an
+# expired one cannot be refreshed without a prompt. Failing at the door beats
+# failing six API calls in with a stack of half-made resources behind you.
+gcloud auth print-access-token >/dev/null 2>&1 \
+  || die "gcloud has no usable credentials — run: gcloud auth login"
 [ -n "${PROJECT_ID}" ] || die "no project set: gcloud config set project <PROJECT_ID> (or export PROJECT_ID)"
 [ -f "${root}/slack/Dockerfile" ] || die "cannot find slack/Dockerfile under ${root}"
 
@@ -62,11 +67,25 @@ ensure_secret() {
     echo "  ${name}: already in Secret Manager (leaving it alone)"
     return
   fi
-  echo
-  printf '  %s\n  paste %s (input hidden): ' "${prompt}" "${name}"
-  local value=""
-  read -r -s value
-  echo
+  local value="" from_file="${name}_FILE"
+  from_file="${!from_file:-}"
+  if [ -n "${from_file}" ]; then
+    # A file, never an environment variable holding the value: `ps` and
+    # /proc/<pid>/environ show the second to every process on the box.
+    [ -r "${from_file}" ] || die "${name}_FILE=${from_file} is not readable"
+    value="$(tr -d '\r\n' < "${from_file}")"
+    echo "  ${name}: read from ${from_file}"
+  elif [ -t 0 ]; then
+    echo
+    printf '  %s\n  paste %s (input hidden): ' "${prompt}" "${name}"
+    read -r -s value
+    echo
+  else
+    die "${name} is not in Secret Manager and there is no terminal to ask.
+  Either run this from a terminal, or point ${name}_FILE at a file holding it:
+    printf %s '<the value>' > /tmp/${name} && chmod 600 /tmp/${name}
+    ${name}_FILE=/tmp/${name} ./slack/deploy/deploy.sh && shred -u /tmp/${name}"
+  fi
   [ -n "${value}" ] || die "${name} cannot be empty"
   gcloud secrets create "${name}" --replication-policy=automatic \
     --project "${PROJECT_ID}" --quiet >/dev/null
