@@ -21,7 +21,7 @@ from fake_firestore import FakeFirestore
 from bot import flows
 from bot.config import Config
 from bot.reconcile import RESET_NOTICE, Reconciler
-from bot.state import SessionStore
+from bot.state import Session, SessionStore
 from bot.store import build_backend
 
 
@@ -248,3 +248,83 @@ def test_the_reset_notice_never_blames_the_user():
     for flow_id, notice in RESET_NOTICE.items():
         assert "service restarted" in notice, flow_id
         assert "Nothing you finished was lost" in notice, flow_id
+
+
+# --- a rebuild is a claim, so it has to be checked -------------------------
+
+
+def test_a_rebuilt_pack_that_no_longer_validates_resets_the_flow(tmp_path):
+    """Bytes drafted under one image can fail under the next.
+
+    This branch exists because the runtime pin moves; a notice claiming a
+    successful rebuild for a pack the runtime would refuse is exactly the
+    class of claim this demo argues against.
+    """
+    client = FakeFirestore()
+    settings = config(tmp_path)
+    pack = {"specVersion": "0.2.0-draft", "version": "0.1.0", "title": "Gifts"}
+    mid_flow(
+        client,
+        settings,
+        "author",
+        step=1,
+        data={"author_pack": pack, "author_decision_id": "gifts-hospitality"},
+    )
+
+    class Refusing(Runtime):
+        def packs_validate(self, project):
+            return fakes.Ran(
+                argv=["jpack"], returncode=1, stdout="", stderr="pack-not-conformant"
+            )
+
+    store = restart(client, settings)
+    session = store.get("U1", now=1100.0)
+    notice = Reconciler(Refusing(str(tmp_path)), fakes.FakeDesk()).reconcile(session)
+
+    assert notice == RESET_NOTICE["author"], "no rebuild is claimed for a refused pack"
+    assert session.step == 0
+    assert session.completed == {"judge"}
+
+
+def test_a_rebuild_validates_before_it_claims_anything(tmp_path):
+    client = FakeFirestore()
+    settings = config(tmp_path)
+    pack = {"specVersion": "0.2.0-draft", "version": "0.1.0", "title": "Gifts"}
+    mid_flow(
+        client,
+        settings,
+        "author",
+        step=1,
+        data={"author_pack": pack, "author_decision_id": "gifts-hospitality"},
+    )
+    store = restart(client, settings)
+    session = store.get("U1", now=1100.0)
+    runtime = Runtime(str(tmp_path))
+    Reconciler(runtime, fakes.FakeDesk()).reconcile(session)
+    assert ("packs-validate",) in runtime.calls, "the rebuilt project is checked, not assumed"
+
+
+def test_a_stored_scratch_path_outside_the_root_is_not_reused(tmp_path):
+    """A hint that has been through a datastore does not get to name a path."""
+    from bot.config import Config
+    from bot.runtime import JpackRuntime
+
+    baked = tmp_path / "baked"
+    (baked / "packs").mkdir(parents=True)
+    (baked / "jpack.json").write_text('{"configVersion": "3", "packs": {}}')
+    root = tmp_path / "sessions"
+    root.mkdir()
+
+    settings = Config.from_env(
+        {"SESSION_ROOT": str(root), "DEMO_PROJECT": str(baked)}
+    )
+    runtime = JpackRuntime(settings)
+
+    outside = tmp_path / "somewhere-else"
+    outside.mkdir()
+    session_object = Session(user_id="U1", created_at=0, last_seen=0)
+    session_object.scratch_dir = str(outside)
+
+    path = runtime.ensure_project(session_object)
+    assert path == str(root / "session-U1"), "the app's own path wins over the stored hint"
+    assert outside.exists(), "and the outside directory is untouched"

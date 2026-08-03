@@ -170,6 +170,12 @@ def _turn(client, user_id, channel, build, publish_home=False):
             log.info("work semaphore full; refused a turn for %s", user_id)
             return
         try:
+            if not session.persist:
+                # The backend read failed: this turn is served on a blank
+                # session and NOTHING is written for this user until a read
+                # succeeds. Say so — silently pretending they are new is how
+                # progress gets destroyed.
+                _say(client, target, content.STATE_UNAVAILABLE)
             notice = RECONCILER.reconcile(session)
             if notice:
                 _say(client, target, notice)
@@ -397,8 +403,20 @@ def wsgi_app(environ, start_response):
     if path == EVENTS_PATH:
         return SLACK_HANDLER(environ, start_response)
     if path in ("/", "/healthz"):
+        # Reports the state backend too: a service that is up but has lost its
+        # durable store is a different thing from a healthy one, and an
+        # operator should not have to read the logs to find out.
+        state = "state={} {}".format(
+            SESSIONS.backend_name, "DEGRADED" if SESSIONS.degraded else "ok"
+        )
         start_response("200 OK", [("Content-Type", "text/plain; charset=utf-8")])
-        return [b"judgment-pack slack demo: up. Slack posts to " + EVENTS_PATH.encode()]
+        return [
+            b"judgment-pack slack demo: up. Slack posts to "
+            + EVENTS_PATH.encode()
+            + b" ("
+            + state.encode()
+            + b")"
+        ]
     start_response("404 Not Found", [("Content-Type", "text/plain; charset=utf-8")])
     return [b"not found"]
 

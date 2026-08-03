@@ -42,7 +42,13 @@ from .store import MemoryDedupe as EventDedupe  # noqa: F401
 from .store import MemoryRateLimiter as RateLimiter  # noqa: F401
 from .store import MemoryStore  # noqa: F401
 from .store import RateLimited  # noqa: F401
-from .store import StateUnavailable, apply_document, build_backend, to_document
+from .store import (
+    LOAD_FAILED,
+    StateUnavailable,
+    apply_document,
+    build_backend,
+    to_document,
+)
 
 log = logging.getLogger("jpack-slack.state")
 
@@ -61,8 +67,10 @@ __all__ = [
     "to_document",
 ]
 
-# Who this process is, for the lease field on a persisted document. A seam
-# for a multi-instance version; nothing in the request path depends on it.
+# Who this process is, for the lease a multi-instance version would take. A
+# seam: `try_lease` writes it, and nothing in the request path reads it. An
+# ordinary save must never touch the lease fields — that was how a routine
+# turn used to erase a claim another instance held.
 HOLDER = "{}-{}".format(os.environ.get("K_REVISION", "local"), uuid.uuid4().hex[:8])
 
 
@@ -71,8 +79,9 @@ class Session:
     """One Slack user's run through the demo, as this process sees it.
 
     The first eight members are persisted; `data` is persisted in its
-    JSON-safe part only; `lock`, `desk` (inside `data`) and `restored` are
-    this process's alone.
+    JSON-safe part only. `lock`, `restored`, `persist`, `alive` and the desk
+    inside `data` are this process's alone — and `persist`/`alive` are the two
+    that decide whether this object may be written back at all.
     """
 
     user_id: str
@@ -94,6 +103,15 @@ class Session:
     # that had never seen this user before — i.e. after a restart. The
     # reconciler clears it once it has rebuilt what it can.
     restored: bool = field(default=False, repr=False, compare=False)
+    # False when this session was built WITHOUT a successful read of the
+    # backend: we do not know what document exists for this user, so nothing
+    # about them may be written until a read proves it. The turn is still
+    # served, and the user is told once.
+    persist: bool = field(default=True, repr=False, compare=False)
+    # False once this session has been reaped — its desk killed, its scratch
+    # copy deleted, its document removed. A turn still holding the object must
+    # not write it back to life.
+    alive: bool = field(default=True, repr=False, compare=False)
 
     def touch(self, now=None):
         self.last_seen = time.time() if now is None else now
@@ -166,30 +184,50 @@ class SessionStore:
     def _durable(self, call, *args, **kwargs):
         """Talk to the backend; on failure log loudly and carry on locally.
 
-        Boot already proved the backend reachable (`build_backend` refuses to
-        start otherwise). If it goes away mid-run, the honest trade is to
-        keep answering the user out of this process's memory and say so in
-        the log — a dropped click teaches them nothing.
+        Boot already proved the backend reachable and WRITABLE
+        (`build_backend` refuses to start otherwise). If it goes away
+        mid-run, the honest trade is to keep answering the user out of this
+        process's memory and say so in the log — a dropped click teaches them
+        nothing.
+
+        A success here does NOT clear the degraded flag. Recovery is proven by
+        a successful READ (`_load`), because the write leg is usually healthy
+        while the read leg is not — and it is the read leg whose failure can
+        cost somebody their progress.
         """
         try:
-            result = call(*args, **kwargs)
-            if self._degraded:
-                log.warning("state backend is answering again")
-                self._degraded = False
-            return result
+            return call(*args, **kwargs)
         except StateUnavailable as error:
-            if not self._degraded:
-                log.error(
-                    "state backend unavailable — degrading to this process's memory "
-                    "for now; sessions will not survive a restart while this lasts: %s",
-                    error,
-                )
-                self._degraded = True
+            self._degrade(error)
             return None
         except Exception as error:  # noqa: BLE001 - same posture for a surprise
-            log.error("state backend raised %s; degrading to memory", type(error).__name__)
-            self._degraded = True
+            self._degrade("{}: {}".format(type(error).__name__, error))
             return None
+
+    def _degrade(self, reason):
+        if not self._degraded:
+            log.error(
+                "state backend unavailable — degrading to this process's memory for "
+                "now; sessions will not survive a restart while this lasts: %s",
+                reason,
+            )
+        self._degraded = True
+
+    def _load(self, user_id):
+        """Read one document. Returns (document_or_None, read_succeeded).
+
+        The second member is the whole point: `None` with `True` means this
+        user has no session yet, and `None` with `False` means nobody knows.
+        A caller that conflates them writes an empty session over a live one.
+        """
+        document = self._store.load(user_id)
+        if document is LOAD_FAILED:
+            self._degrade("the session document could not be read")
+            return None, False
+        if self._degraded:
+            log.warning("state backend is answering reads again")
+            self._degraded = False
+        return document, True
 
     @property
     def backend_name(self):
@@ -202,97 +240,161 @@ class SessionStore:
     # --- lookup -----------------------------------------------------------
 
     def get(self, user_id, create=True, now=None):
+        """The live session for this user.
+
+        On the turn path this touches the backend exactly ONCE — one read of
+        one document — and never scans the collection. Expiring other
+        people's sessions is the sweeper's job (and the TTL policy's); a
+        user's click should not pay for it, and it certainly should not pay
+        for it while holding the lock every other user's click needs.
+        """
         now = time.time() if now is None else now
-        evicted = []
+        stale = []
         with self._lock:
-            evicted.extend(self._expired(now))
             session = self._local.get(user_id)
-            if session is None:
-                document = self._durable(self._store.load, user_id)
-                if document:
-                    session = Session(
-                        user_id=user_id, created_at=now, last_seen=now, restored=True
-                    )
-                    apply_document(session, document)
-                    self._local[user_id] = session
-                    log.info(
-                        "restored session for %s from %s (flow %s, step %s, completed %s)",
-                        user_id,
-                        self._backend.name,
-                        session.active_flow,
-                        session.step,
-                        sorted(session.completed),
-                    )
-                elif create:
-                    session = Session(user_id=user_id, created_at=now, last_seen=now)
-                    self._local[user_id] = session
-                else:
-                    self._release_many(evicted)
-                    return None
+            if session is not None and now - session.last_seen > self._config.session_ttl_seconds:
+                # THIS user's session has expired. One comparison, no backend
+                # call, no scan: everybody else's expiry is the sweeper's.
+                self._local.pop(user_id, None)
+                session.alive = False
+                stale.append(session)
+                session = None
+            if session is not None:
                 session.touch(now)
-                # Written before the cap is enforced: the cap counts documents,
-                # and a session the backend has not heard of yet would let the
-                # table grow by one every time.
                 self.save(session)
-                evicted.extend(self._overflow(now))
+                return session
+        if stale:
+            self._durable(self._store.delete, stale[0].user_id)
+            self._release_many(stale)
+            if not create:
+                return None
+
+        document, read_ok = self._load(user_id)
+
+        with self._lock:
+            session = self._local.get(user_id)  # another thread may have won
+            if session is not None:
+                session.touch(now)
+                self.save(session)
+                return session
+            if document:
+                session = Session(
+                    user_id=user_id, created_at=now, last_seen=now, restored=True
+                )
+                apply_document(session, document)
+                log.info(
+                    "restored session for %s from %s (flow %s, step %s, completed %s)",
+                    user_id,
+                    self._backend.name,
+                    session.active_flow,
+                    session.step,
+                    sorted(session.completed),
+                )
+            elif not read_ok:
+                # The read FAILED. This user may be three use cases in, with
+                # everything sitting in a document nobody could see just now.
+                # Serve the turn, but never write: an empty session saved here
+                # would destroy exactly what durability exists to keep, in the
+                # one window (just after a redeploy) where every turn lands
+                # here. `persist` stays False until a later read proves the
+                # document's state.
+                if not create:
+                    return None
+                session = Session(
+                    user_id=user_id, created_at=now, last_seen=now, persist=False
+                )
+                log.error(
+                    "serving %s from a blank session because the backend read failed; "
+                    "NOTHING will be written for them until a read succeeds",
+                    user_id,
+                )
+            elif create:
+                session = Session(user_id=user_id, created_at=now, last_seen=now)
+            else:
+                return None
+            self._local[user_id] = session
             session.touch(now)
+            evicted = self._overflow_locally()
         self.save(session)
         self._release_many(evicted)
         return session
 
     def save(self, session):
-        """Persist the metadata half of a session. Cheap, and called often."""
-        document = to_document(
-            session,
-            self._config.session_ttl_seconds,
-            holder=HOLDER,
-            lease_seconds=self._config.lease_seconds,
-        )
+        """Persist the metadata half of a session. Cheap, and called often.
+
+        Two sessions are never written: one whose read failed (`persist` is
+        False — we do not know what we would be overwriting) and one that has
+        already been reaped (`alive` is False — the sweeper deleted its
+        document, killed its desk and removed its project, and a late write
+        from an in-flight turn would resurrect a session with no local half).
+        """
+        if not session.persist:
+            return None
+        if not session.alive:
+            log.info("not writing %s: the session was reaped mid-turn", session.user_id)
+            return None
+        document = to_document(session, self._config.session_ttl_seconds)
         self._durable(self._store.save, document)
         return document
 
-    def _expired(self, now):
-        """Sessions past the TTL, dropped from both halves."""
+    def _overflow_locally(self):
+        """Enforce the cap over sessions THIS process holds. Lock held."""
         gone = []
-        documents = self._durable(self._store.expired, now) or []
-        for document in documents:
-            user_id = document.get("user_id")
-            if not user_id:
-                continue
-            session = self._local.pop(user_id, None) or _shell(document)
-            self._durable(self._store.delete, user_id)
-            gone.append(session)
-        # A local session whose backend document vanished (a TTL policy got
-        # there first) still owns a desk and a directory here.
+        while len(self._local) > self._config.max_sessions:
+            oldest = min(self._local.values(), key=lambda s: s.last_seen)
+            self._local.pop(oldest.user_id, None)
+            oldest.alive = False
+            gone.append(oldest)
+        for session in gone:
+            self._durable(self._store.delete, session.user_id)
+        return gone
+
+    def _expired_locally(self, now):
+        """Local sessions past the TTL. Lock held; no backend reads."""
+        gone = []
         for user_id, session in list(self._local.items()):
             if now - session.last_seen > self._config.session_ttl_seconds:
                 self._local.pop(user_id, None)
-                self._durable(self._store.delete, user_id)
-                if session not in gone:
-                    gone.append(session)
-        return gone
-
-    def _overflow(self, now):
-        gone = []
-        cap = self._config.max_sessions
-        for document in self._durable(self._store.overflow, cap) or []:
-            user_id = document.get("user_id")
-            if not user_id:
-                continue
-            session = self._local.pop(user_id, None) or _shell(document)
-            self._durable(self._store.delete, user_id)
-            gone.append(session)
+                session.alive = False
+                gone.append(session)
         return gone
 
     # --- expiry -----------------------------------------------------------
 
-    def sweep(self, now=None):
-        """Drop sessions past the TTL. Returns the evicted user ids."""
+    def sweep(self, now=None, durable=True):
+        """Expire sessions. The sweeper thread's job, not a turn's.
+
+        Two halves. The local one kills desks and deletes scratch copies —
+        things no TTL policy can reach. The durable one is a bounded query for
+        documents whose expiry has passed, run OFF the table lock, as a
+        backstop for the window before the policy deletes them (and for a
+        deployment that never created one).
+        """
         now = time.time() if now is None else now
         with self._lock:
-            expired = self._expired(now)
+            expired = self._expired_locally(now)
+        for session in expired:
+            # The document goes with the desk and the directory: a policy that
+            # deletes it eventually is a backstop, not a reason to leave a
+            # session half-reaped in the meantime.
+            self._durable(self._store.delete, session.user_id)
         self._release_many(expired)
-        return [session.user_id for session in expired]
+        gone = [session.user_id for session in expired]
+
+        if durable and self._backend.durable:
+            for document in self._durable(self._store.expired, now) or []:
+                user_id = document.get("user_id")
+                if not user_id or user_id in gone:
+                    continue
+                with self._lock:
+                    session = self._local.pop(user_id, None)
+                if session is not None:
+                    session.alive = False
+                shell = session or _shell(document)
+                self._durable(self._store.delete, user_id)
+                self._release_many([shell])
+                gone.append(user_id)
+        return gone
 
     def start_sweeper(self, interval=60.0):
         """Expire on a timer, not on the next visitor's request.
@@ -300,8 +402,9 @@ class SessionStore:
         Without this, a quiet workspace keeps every session's gateway process
         alive indefinitely — the TTL would be honored only by traffic that may
         never come. (A Firestore TTL policy deletes the DOCUMENTS on its own
-        schedule; this thread is what kills the processes and the directories,
-        which no policy can reach.)
+        schedule, including while this service is scaled to zero; this thread
+        is what kills the processes and the directories, which no policy can
+        reach.)
         """
         if self._sweeper is not None:
             return self._sweeper
@@ -325,7 +428,9 @@ class SessionStore:
     def drop(self, user_id):
         with self._lock:
             session = self._local.pop(user_id, None)
-            self._durable(self._store.delete, user_id)
+            if session is not None:
+                session.alive = False
+        self._durable(self._store.delete, user_id)
         if session is not None:
             self._release_many([session])
         return session
@@ -338,12 +443,13 @@ class SessionStore:
         # Called with NO lock held: on_evict kills a process and waits for it,
         # and remove_scratch deletes a directory tree.
         for session in sessions:
+            session.alive = False
             if self._on_evict is not None:
                 try:
                     self._on_evict(session)
                 except Exception:  # noqa: BLE001 - never let cleanup break a request
                     log.exception("evicting a session failed")
-            remove_scratch(session)
+            remove_scratch(session, self._config.session_root)
 
 
 def _shell(document):
@@ -361,11 +467,41 @@ def _shell(document):
     return session
 
 
-def remove_scratch(session):
-    """Delete a session's scratch copy of the demo project, if it has one."""
+def inside(path, root):
+    """Is `path` really under `root`, after symlinks?
+
+    `scratch_dir` now round-trips through an external datastore, and it is fed
+    straight to rmtree. The module docstring already calls it a hint; this is
+    the code agreeing. A hint that points outside the scratch root is not a
+    directory this app may delete, and it is not one it may reuse either.
+    """
+    if not path or not root:
+        return False
+    try:
+        real_path = os.path.realpath(path)
+        real_root = os.path.realpath(root)
+        return os.path.commonpath([real_path, real_root]) == real_root and real_path != real_root
+    except (ValueError, OSError):
+        return False
+
+
+def remove_scratch(session, root=None):
+    """Delete a session's scratch copy of the demo project, if it has one.
+
+    Only ever inside the configured scratch root: a stored path that points
+    anywhere else is refused and logged rather than obeyed.
+    """
     path = session.scratch_dir
     session.scratch_dir = None
     if not path:
+        return
+    if root is not None and not inside(path, root):
+        log.error(
+            "refusing to delete %r for %s: it is not inside the scratch root %r",
+            path,
+            session.user_id,
+            root,
+        )
         return
     if not os.path.isdir(path):
         return

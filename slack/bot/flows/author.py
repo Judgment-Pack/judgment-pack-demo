@@ -196,13 +196,19 @@ def register_pack(runtime, project, decision_id, pack):
     path = os.path.join("packs", decision_id + ".pack.json")
     absolute = os.path.join(project, path)
     os.makedirs(os.path.dirname(absolute), exist_ok=True)
+
+    config_path = os.path.join(project, "jpack.json")
+    # Snapshot before touching anything: if the amendment cannot be declared,
+    # a half-registered project is worse than no registration at all — it is
+    # drifted from its own lock, so EVERY later evaluation in this session,
+    # including the untouched packs use cases 1, 3 and 4 run, refuses.
+    with open(config_path, "rb") as handle:
+        config_before = handle.read()
+    config = json.loads(config_before.decode("utf-8"))
+
     with open(absolute, "w") as handle:
         json.dump(pack, handle, indent=2)
         handle.write("\n")
-
-    config_path = os.path.join(project, "jpack.json")
-    with open(config_path) as handle:
-        config = json.load(handle)
     config.setdefault("packs", {})[decision_id] = {
         "path": path,
         "description": (pack.get("decision") or {}).get("question", pack.get("title", "")),
@@ -225,6 +231,15 @@ def register_pack(runtime, project, decision_id, pack):
     if runtime.has_lock(project):
         locked = runtime.packs_lock(project)
         if not locked.ok:
+            # Put the project back exactly as it was, so the rest of the
+            # session still decides. The refusal is reported; the wreckage is
+            # not left behind to make every other use case refuse too.
+            with open(config_path, "wb") as handle:
+                handle.write(config_before)
+            try:
+                os.remove(absolute)
+            except OSError:
+                pass
             return False
     return True
 

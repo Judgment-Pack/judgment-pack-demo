@@ -27,5 +27,10 @@ Prove it without Slack, without an API key, on the real binaries:
 
 ```bash
 python3 -m pytest slack/
-JPACK_BIN=$(which jpack) GATEWAY_BIN=$(which gateway) python3 slack/bot/dryrun.py --script
+# Paths to the binaries you built — `$(which jpack)` works too, when they are
+# on PATH under exactly those names; a build sitting in a sibling checkout is
+# not, and an empty variable silently falls back to the bare name.
+JPACK_BIN=../judgment-pack-runtime/jpack \
+GATEWAY_BIN=../judgment-pack-gateway/go/gateway \
+  python3 slack/bot/dryrun.py --script
 ```

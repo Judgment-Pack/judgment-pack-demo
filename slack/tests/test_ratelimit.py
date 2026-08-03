@@ -79,7 +79,12 @@ def test_the_session_table_is_capped_and_evicts_the_least_recent():
 
 def test_eviction_reaps_the_desk_and_the_scratch_copy(tmp_path):
     reaped = []
-    store = SessionStore(_config(SESSION_TTL_SECONDS="1"), on_evict=lambda s: reaped.append(s.user_id))
+    # SESSION_ROOT must be the real root here: a scratch path outside it is
+    # refused by the containment guard, which is its own test below.
+    store = SessionStore(
+        _config(SESSION_TTL_SECONDS="1", SESSION_ROOT=str(tmp_path)),
+        on_evict=lambda s: reaped.append(s.user_id),
+    )
     session = store.get("U1", now=0.0)
     scratch = tmp_path / "session-U1"
     scratch.mkdir()

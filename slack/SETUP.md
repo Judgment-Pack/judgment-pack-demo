@@ -115,19 +115,29 @@ multi-instance: the scratch copy of the project and the live signing desk belong
 container is running, so `--min-instances=1 --max-instances=1` stays, and a restart mid-run
 rebuilds what it can and tells the user plainly what it cannot (`slack/DESIGN.md`).
 
-If the TTL step cannot run automatically, the script prints the one command to run yourself — it
-is idempotent, so running it anyway is harmless:
+The backend writes **three** collections: `slack-demo-sessions` (progress), `-events` (Slack event
+ids, so a retry is still recognized after a restart) and `-limits` (the per-user budgets). Each one
+needs its own TTL policy — policies are per collection group. If the step cannot run
+automatically, the script prints the commands; they are idempotent, so running them anyway is
+harmless:
 
 ```bash
-gcloud firestore fields ttls update expires_at \
-  --collection-group=slack-demo-sessions --enable-ttl --project <YOUR_PROJECT_ID>
+for g in slack-demo-sessions slack-demo-sessions-events slack-demo-sessions-limits; do
+  gcloud firestore fields ttls update expires_at \
+    --collection-group="$g" --enable-ttl --project <YOUR_PROJECT_ID>
+done
 ```
 
-Without that policy nothing breaks — the app ignores expired documents and its own sweeper still
-deletes scratch directories and reaps desks — but the documents accumulate forever. Confirm it:
+What the policies actually do: while an instance is running, the app deletes its own expired
+**session** documents (that is the sweeper, which also kills the gateway processes and deletes the
+scratch copies — things no policy can reach). The policy is what deletes session documents while
+nothing is running, and it is the **only** thing that ever deletes the `-events` and `-limits`
+documents. Confirm all three:
 
 ```bash
-gcloud firestore fields ttls list --collection-group=slack-demo-sessions --project <YOUR_PROJECT_ID>
+for g in slack-demo-sessions slack-demo-sessions-events slack-demo-sessions-limits; do
+  gcloud firestore fields ttls list --collection-group="$g" --project <YOUR_PROJECT_ID>
+done
 ```
 
 To run without a database at all, set `STATE_BACKEND=memory` in `slack/deploy/deploy.env`: the app
@@ -141,8 +151,9 @@ revision, pinned to exactly one instance with CPU always allocated.
 **What that costs, stated plainly:** `--min-instances=1 --no-cpu-throttling` means one instance
 with 1 vCPU and 512Mi is billed continuously, not per request — on the order of a few tens of
 dollars a month at list price, comfortably inside a credits budget and *not* inside the free tier.
-(Firestore is the cheap half: a session document is a few kilobytes and a turn costs a handful of
-reads and writes, so a demo workspace stays inside the free tier without trying.)
+(Firestore is the cheap half: a session document is a few kilobytes, and a turn costs exactly one
+document read and one document write — plus one create per Slack event for de-duplication — so a
+demo workspace stays inside the free tier without trying.)
 Both flags are required by the design rather than chosen for speed: the app answers Slack in
 milliseconds and does the real work after that 200 (throttled CPU would slow exactly the part that
 matters), and each session's screening desk is a long-lived process that must keep running between
@@ -193,7 +204,8 @@ New members of the workspace now get the welcome automatically when they join.
 | "refusing to start without SLACK_SIGNING_SECRET" in the logs | The secret is missing or empty in Secret Manager. Add a version and roll a revision — see *Rotating a key* below; a new version alone changes nothing. |
 | Every Slack request suddenly 401s after you rotated the signing secret | The running instance still holds the old value: secret references resolve at instance start. Roll a revision (below). |
 | Narrations are missing but decisions still appear | Exactly the designed behavior: the model is unavailable or the per-user hourly budget is spent. The dispositions are unaffected — they never needed it. |
-| "refusing to start … cannot reach Firestore collection" in the logs | The database or the IAM binding is missing. Re-run `deploy.sh` (both steps are idempotent), or set `STATE_BACKEND=memory` to run without one. The refusal is deliberate: a demo told to remember must not silently forget. |
+| "refusing to start … cannot use Firestore collection" in the logs | The database is missing, or the service account lacks `roles/datastore.user` (a read-only binding fails this on purpose — the probe writes as well as reads). Re-run `deploy.sh`; both steps are idempotent. If it names a Datastore-mode database, that mode cannot be changed: create a named Native one and set `FIRESTORE_DATABASE` in `deploy.env`, or set `STATE_BACKEND=memory`. |
+| A user is told "I cannot reach the place your progress is kept" | Firestore reads are failing. The turn is still served, and **nothing is written** for that user until a read succeeds — deliberately, so a session nobody could read is never overwritten by an empty one. `curl -s <URL>/` reports `state=firestore DEGRADED` while it lasts. |
 | A user says the demo "started over" after a deploy | Expected, and it should have said so in one line. Use cases 1 and 2 resume; 3 and 4 restart, because a signing desk's receipts and a decision book cannot be rebuilt by a new container. |
 | A use case shows a refusal in a code block | Read it. A refusal is an answer here, and it is reported verbatim on purpose. |
 
@@ -223,8 +235,16 @@ You do not need any of the above to see the whole thing work:
 
 ```bash
 python3 -m pytest slack/
-JPACK_BIN=$(which jpack) GATEWAY_BIN=$(which gateway) python3 slack/bot/dryrun.py --script
+JPACK_BIN=../judgment-pack-runtime/jpack \
+GATEWAY_BIN=../judgment-pack-gateway/go/gateway \
+  python3 slack/bot/dryrun.py --script
 ```
 
+Give both variables the **path to the binary you built**. `$(which jpack)` works when the binaries
+are on your PATH under exactly those names; a build sitting in a sibling checkout is not, and
+`$(which …)` then expands to nothing, which falls back to the bare name and reports
+"GATEWAY_BIN is not runnable: gateway" — the one path you did not mean.
+
 The dry run drives the same four flows on a terminal with a canned model, running the real
-binaries. It says exactly what is missing if a path is not set.
+binaries, with the memory state backend (no database, no credentials). It says exactly what is
+missing if a path is not set.

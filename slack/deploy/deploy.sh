@@ -47,6 +47,9 @@ GATEWAY_AUTHORITY="${GATEWAY_AUTHORITY:-gateway:judgment-pack-slack}"
 STATE_BACKEND="${STATE_BACKEND:-firestore}"
 FIRESTORE_COLLECTION="${FIRESTORE_COLLECTION:-slack-demo-sessions}"
 SESSION_TTL_SECONDS="${SESSION_TTL_SECONDS:-7200}"
+# Empty means the project's (default) database, which is what deploy.sh
+# creates. Set FIRESTORE_DATABASE when the default one is Datastore mode.
+FIRESTORE_DATABASE="${FIRESTORE_DATABASE:-}"
 
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 die() { printf '\nERROR: %s\n' "$*" >&2; exit 1; }
@@ -143,8 +146,24 @@ echo "  ${runtime_sa} may read the three secrets"
 # rather than pretended (see reconciliation in slack/DESIGN.md).
 if [ "${STATE_BACKEND}" = "firestore" ]; then
   say "4/7 Firestore (Native mode) for session state"
-  if gcloud firestore databases describe --project "${PROJECT_ID}" >/dev/null 2>&1; then
-    echo "  database exists"
+  existing_type="$(gcloud firestore databases describe --project "${PROJECT_ID}" \
+                     --format='value(type)' 2>/dev/null || true)"
+  if [ -n "${existing_type}" ]; then
+    # A project gets ONE default database and its mode is permanent. A
+    # Datastore-mode one cannot serve the Native client, and "it exists" would
+    # be a deploy that succeeds and a service that dies at boot.
+    case "${existing_type}" in
+      FIRESTORE_NATIVE)
+        echo "  database exists (Native mode)" ;;
+      *)
+        die "this project's default Firestore database is ${existing_type}, and the
+  app needs Native mode. The default database's mode cannot be changed, so either:
+    • create a named Native database and point the app at it:
+        gcloud firestore databases create --database=slack-demo \\
+          --location=${REGION} --type=firestore-native --project ${PROJECT_ID}
+      then set FIRESTORE_DATABASE=\"slack-demo\" in slack/deploy/deploy.env; or
+    • set STATE_BACKEND=memory in slack/deploy/deploy.env to run without one." ;;
+    esac
   else
     # A project gets one default database, and creating a second time is an
     # error rather than a no-op: tolerate exactly that.
@@ -168,18 +187,33 @@ if [ "${STATE_BACKEND}" = "firestore" ]; then
     --role=roles/datastore.user --quiet >/dev/null
   echo "  ${runtime_sa} may read and write session documents"
 
-  # The TTL policy is what actually deletes an abandoned session document.
-  # Enabling it twice is a no-op, so this runs every deploy.
-  if gcloud firestore fields ttls update expires_at \
-       --collection-group="${FIRESTORE_COLLECTION}" --enable-ttl \
-       --project "${PROJECT_ID}" --quiet >/dev/null 2>&1; then
-    echo "  TTL policy on expires_at is enabled for ${FIRESTORE_COLLECTION}"
-  else
-    echo "  NOTE: could not set the TTL policy automatically. Run it once yourself:"
-    echo "    gcloud firestore fields ttls update expires_at \\"
-    echo "      --collection-group=${FIRESTORE_COLLECTION} --enable-ttl --project ${PROJECT_ID}"
-    echo "  Without it, expired session documents are never deleted (the app still"
-    echo "  ignores them; they simply accumulate)."
+  # THREE collections, not one: sessions, the de-duplication records the
+  # Events API needs, and the rate-limit buckets. Each writes an expires_at
+  # for a policy that has to exist per collection group, and only the sessions
+  # one is also swept by the running app — the other two have no deleter at
+  # all without this.
+  ttl_missing=""
+  for group in "${FIRESTORE_COLLECTION}" \
+               "${FIRESTORE_COLLECTION}-events" \
+               "${FIRESTORE_COLLECTION}-limits"; do
+    if gcloud firestore fields ttls update expires_at \
+         --collection-group="${group}" --enable-ttl \
+         --project "${PROJECT_ID}" --quiet >/dev/null 2>&1; then
+      echo "  TTL policy on expires_at enabled for ${group}"
+    else
+      ttl_missing="${ttl_missing} ${group}"
+    fi
+  done
+  if [ -n "${ttl_missing}" ]; then
+    echo "  NOTE: could not set the TTL policy for:${ttl_missing}"
+    echo "  Run this once per collection group (idempotent):"
+    for group in ${ttl_missing}; do
+      echo "    gcloud firestore fields ttls update expires_at \\"
+      echo "      --collection-group=${group} --enable-ttl --project ${PROJECT_ID}"
+    done
+    echo "  The running app deletes expired SESSION documents itself; the policy is"
+    echo "  what deletes them while no instance is running, and it is the only thing"
+    echo "  that ever deletes the -events and -limits documents."
   fi
 else
   say "4/7 Session state: ${STATE_BACKEND} (in this instance's memory only)"
@@ -224,7 +258,7 @@ gcloud run deploy "${SERVICE}" \
   --memory="${MEMORY}" \
   --timeout="${TIMEOUT}" \
   --set-secrets "SLACK_BOT_TOKEN=SLACK_BOT_TOKEN:latest,SLACK_SIGNING_SECRET=SLACK_SIGNING_SECRET:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest" \
-  --set-env-vars "GEMINI_MODEL=${GEMINI_MODEL},DEMO_PROJECT=${DEMO_PROJECT},SESSION_ROOT=${SESSION_ROOT},GATEWAY_AUTHORITY=${GATEWAY_AUTHORITY},STATE_BACKEND=${STATE_BACKEND},FIRESTORE_COLLECTION=${FIRESTORE_COLLECTION},SESSION_TTL_SECONDS=${SESSION_TTL_SECONDS}" \
+  --set-env-vars "GEMINI_MODEL=${GEMINI_MODEL},DEMO_PROJECT=${DEMO_PROJECT},SESSION_ROOT=${SESSION_ROOT},GATEWAY_AUTHORITY=${GATEWAY_AUTHORITY},STATE_BACKEND=${STATE_BACKEND},FIRESTORE_COLLECTION=${FIRESTORE_COLLECTION},SESSION_TTL_SECONDS=${SESSION_TTL_SECONDS},FIRESTORE_DATABASE=${FIRESTORE_DATABASE}" \
   --project "${PROJECT_ID}" --quiet
 
 URL="$(gcloud run services describe "${SERVICE}" --region "${REGION}" \
@@ -243,9 +277,11 @@ cat <<EOF
   Health check (should say "up"):   curl -s ${URL}/
   Logs:  gcloud run services logs tail ${SERVICE} --region ${REGION} --project ${PROJECT_ID}
 
-  Session state: ${STATE_BACKEND}$([ "${STATE_BACKEND}" = "firestore" ] && printf ' (collection %s)' "${FIRESTORE_COLLECTION}")
-  Confirm the TTL policy that deletes abandoned sessions is on:
-    gcloud firestore fields ttls list --collection-group=${FIRESTORE_COLLECTION} --project ${PROJECT_ID}
+  Session state: ${STATE_BACKEND}$([ "${STATE_BACKEND}" = "firestore" ] && printf ' (collections %s, %s-events, %s-limits)' "${FIRESTORE_COLLECTION}" "${FIRESTORE_COLLECTION}" "${FIRESTORE_COLLECTION}")
+  Confirm the three TTL policies that delete abandoned documents are on:
+    for g in ${FIRESTORE_COLLECTION} ${FIRESTORE_COLLECTION}-events ${FIRESTORE_COLLECTION}-limits; do
+      gcloud firestore fields ttls list --collection-group="\$g" --project ${PROJECT_ID}
+    done
 
   The service is public on purpose — Slack posts to it from the internet, and
   every request is authenticated by its signature against the signing secret

@@ -169,15 +169,30 @@ class Reconciler:
         project = session.scratch_dir
         if not (pack and decision_id and project):
             return False
-        if os.path.isfile(os.path.join(project, "packs", decision_id + ".pack.json")):
-            return True
-        try:
-            from .flows import author
+        if not os.path.isfile(os.path.join(project, "packs", decision_id + ".pack.json")):
+            try:
+                from .flows import author
 
-            return author.register_pack(self.runtime, project, decision_id, pack)
-        except Exception as error:  # noqa: BLE001
-            log.error("could not re-register %s for %s: %s", decision_id, session.user_id, error)
+                if not author.register_pack(self.runtime, project, decision_id, pack):
+                    return False
+            except Exception as error:  # noqa: BLE001
+                log.error(
+                    "could not re-register %s for %s: %s", decision_id, session.user_id, error
+                )
+                return False
+        # Registered is not the same as accepted. Bytes drafted under one
+        # image can fail validation under the next — this branch exists
+        # BECAUSE the runtime pin moves — and a rebuild notice for a pack the
+        # runtime would refuse is exactly the claim this app must not make.
+        ran = self.runtime.packs_validate(project)
+        if not ran.ok:
+            log.error(
+                "the re-registered pack %s does not validate under this image; "
+                "resetting the flow instead of claiming a rebuild",
+                decision_id,
+            )
             return False
+        return True
 
     # --- the honest half ---------------------------------------------------
 

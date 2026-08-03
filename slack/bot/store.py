@@ -73,16 +73,44 @@ class StateUnavailable(Exception):
     """
 
 
+class LoadFailed(object):
+    """The answer to `load()` when the READ failed — never `None`.
+
+    `None` means "this user has no document". A failed read means "I do not
+    know", and the difference is the difference between a new user and a user
+    whose whole demo is sitting in a document this process could not see. The
+    caller must never turn the second into the first: manufacturing an empty
+    session and saving it would destroy the very progress durability exists
+    to keep, and it would do it in the one window — just after a redeploy,
+    when nothing is cached locally — where every turn takes this path.
+    """
+
+    def __repr__(self):  # pragma: no cover - debugging aid
+        return "<load failed: the backend could not be read>"
+
+    def __bool__(self):
+        return False
+
+
+LOAD_FAILED = LoadFailed()
+
+
 # --- the persisted projection ---------------------------------------------
 
 
-def json_safe_data(data):
-    """The subset of flow-local data that survives a round trip.
+def json_safe_data(data, budget=MAX_DATA_BYTES):
+    """The subset of flow-local data that survives a round trip, within budget.
 
     Draft pack documents, the id of the pack that was registered, the newest
     run id, scalars a flow left behind. Everything else — a Popen, a socket,
     a Desk — is dropped here rather than at write time, so the rule lives in
     one readable place.
+
+    The budget is checked against the WHOLE map, not key by key: the limit
+    being defended (Firestore's, one mebibyte) is per document, and several
+    innocent keys can breach it together. Largest first, until it fits, and
+    every drop is logged — a persisted document that quietly stopped carrying
+    a user's draft would be worse than one that says it did.
     """
     safe = {}
     for key, value in (data or {}).items():
@@ -92,17 +120,33 @@ def json_safe_data(data):
             encoded = json.dumps(value)
         except (TypeError, ValueError):
             continue
-        if len(encoded) > MAX_DATA_BYTES:
-            log.info("dropping session data %r from the persisted document: too large", key)
-            continue
-        safe[key] = json.loads(encoded)
-    return safe
+        safe[key] = (encoded, len(encoded))
+
+    total = sum(size for _, size in safe.values())
+    while safe and total > budget:
+        biggest = max(safe, key=lambda key: safe[key][1])
+        log.warning(
+            "dropping session data %r (%d bytes) from the persisted document: "
+            "the document budget is %d bytes",
+            biggest,
+            safe[biggest][1],
+            budget,
+        )
+        total -= safe.pop(biggest)[1]
+    return {key: json.loads(encoded) for key, (encoded, _) in safe.items()}
 
 
-def to_document(session, ttl_seconds, holder=None, lease_seconds=0):
-    """The persisted shape of one session."""
+def to_document(session, ttl_seconds):
+    """The persisted shape of one session.
+
+    No lease fields: a lease is taken by `try_lease` in a transaction and
+    released by `release_lease`, and an ordinary save has no business
+    claiming — or erasing — one. `data` is carried as a JSON STRING so that a
+    merging write replaces it whole; a merged nested map would keep keys a
+    flow had already dropped.
+    """
     expires_at = float(session.last_seen) + float(ttl_seconds)
-    document = {
+    return {
         "user_id": session.user_id,
         "created_at": float(session.created_at),
         "last_seen": float(session.last_seen),
@@ -113,17 +157,13 @@ def to_document(session, ttl_seconds, holder=None, lease_seconds=0):
         # A hint about where this user's project was, not a promise that it
         # is still there. See the module docstring.
         "scratch_dir": session.scratch_dir,
-        "data": json_safe_data(session.data),
+        "data_json": json.dumps(json_safe_data(session.data), sort_keys=True),
         "expires_at_epoch": expires_at,
         # A real timestamp, because a Firestore TTL policy deletes on a
         # timestamp field and nothing else.
         "expires_at": datetime.fromtimestamp(expires_at, tz=timezone.utc),
         "updated_at": datetime.fromtimestamp(float(session.last_seen), tz=timezone.utc),
     }
-    if holder:
-        document["lease_holder"] = holder
-        document["lease_expires_at_epoch"] = float(session.last_seen) + float(lease_seconds)
-    return document
 
 
 def apply_document(session, document):
@@ -139,8 +179,14 @@ def apply_document(session, document):
     session.completed = set(document.get("completed") or [])
     session.welcomed = bool(document.get("welcomed"))
     session.scratch_dir = document.get("scratch_dir")
-    data = document.get("data") or {}
-    session.data.update({k: v for k, v in data.items() if k not in LOCAL_ONLY_DATA})
+    raw = document.get("data_json")
+    try:
+        data = json.loads(raw) if raw else (document.get("data") or {})
+    except (TypeError, ValueError):
+        log.warning("session %s carried unreadable data_json; ignoring it", session.user_id)
+        data = {}
+    if isinstance(data, dict):
+        session.data.update({k: v for k, v in data.items() if k not in LOCAL_ONLY_DATA})
     return session
 
 
@@ -160,32 +206,38 @@ class StateStore:
     durable = False
 
     def load(self, user_id):
-        """The persisted document for this user, or None."""
+        """The document for this user, `None` if there is none — or LOAD_FAILED.
+
+        Three answers, never two. An implementation that cannot tell "no
+        document" from "I could not look" hands its caller a licence to
+        overwrite a live session with an empty one.
+        """
         raise NotImplementedError
 
     def save(self, document):
-        """Write one document, whole."""
+        """Write one document. Must not touch the lease fields."""
         raise NotImplementedError
 
     def delete(self, user_id):
         raise NotImplementedError
 
     def documents(self):
-        """Every live document. Used by the sweeper and by diagnostics."""
+        """Every live document. Diagnostics and tests only — never a turn."""
         raise NotImplementedError
 
-    def expired(self, now):
-        """Documents whose expires_at has passed."""
+    def expired(self, now, limit=200):
+        """Documents whose expiry has passed, bounded.
+
+        Called by the SWEEPER THREAD only, never on a user's turn: expiring
+        other people's documents is not something a click should pay for, and
+        with a TTL policy in place it is the service's job anyway. This is the
+        backstop for the window before the policy runs.
+        """
         return [
             document
             for document in self.documents()
             if float(document.get("expires_at_epoch") or 0) <= now
-        ]
-
-    def overflow(self, cap):
-        """Documents beyond the cap, least recently seen first."""
-        documents = sorted(self.documents(), key=lambda d: float(d.get("last_seen") or 0))
-        return documents[: max(0, len(documents) - cap)]
+        ][:limit]
 
     def try_lease(self, user_id, holder, seconds, now=None):
         """Take (or renew) the turn lease for this user.
@@ -280,6 +332,19 @@ def _transactional(function):
         return function
 
 
+def _is_already_exists(error):
+    """Is this the datastore saying "that document is already there"?
+
+    Matched by name rather than by import, so the fake in the tests can raise
+    the same shape without pulling in google-api-core.
+    """
+    if type(error).__name__ == "AlreadyExists":
+        return True
+    if getattr(error, "code", None) in (6, "ALREADY_EXISTS"):
+        return True
+    return "already exists" in str(error).lower()
+
+
 def _lease_in_transaction(transaction, reference, holder, seconds, now):
     snapshot = reference.get(transaction=transaction)
     document = snapshot.to_dict() if getattr(snapshot, "exists", False) else None
@@ -340,17 +405,27 @@ class FirestoreStore(StateStore):
         return self._collection().document(user_id)
 
     def load(self, user_id):
+        """`None` for absence, LOAD_FAILED for a read this backend could not do.
+
+        The caller distinguishes them, and everything downstream depends on
+        it: absence means a new user, a failed read means a user whose whole
+        demo may be sitting in a document nobody could see just now.
+        """
         try:
             snapshot = self._document(user_id).get()
         except Exception as error:  # noqa: BLE001
-            raise StateUnavailable("reading {} failed: {}".format(user_id, error))
+            log.error("reading session %s failed: %s", user_id, error)
+            return LOAD_FAILED
         if not getattr(snapshot, "exists", False):
             return None
         return snapshot.to_dict()
 
     def save(self, document):
         try:
-            self._document(document["user_id"]).set(document)
+            # MERGE, so the lease fields a transaction owns are not erased by
+            # a routine turn. `data_json` is one string field, so merging
+            # cannot leave a key behind that a flow has dropped.
+            self._document(document["user_id"]).set(document, merge=True)
         except Exception as error:  # noqa: BLE001
             raise StateUnavailable("writing {} failed: {}".format(document["user_id"], error))
 
@@ -365,6 +440,30 @@ class FirestoreStore(StateStore):
             return [snapshot.to_dict() for snapshot in self._collection().stream()]
         except Exception as error:  # noqa: BLE001
             raise StateUnavailable("listing sessions failed: {}".format(error))
+
+    def expired(self, now, limit=200):
+        """A bounded server-side query, not a scan of the whole collection.
+
+        Reading every session document to find the handful that expired is
+        how a free-tier read budget disappears while nobody is even using the
+        demo. `where` + `limit` asks the question that was actually meant.
+        """
+        collection = self._collection()
+        try:
+            query = self._where(collection, "expires_at_epoch", "<=", now).limit(limit)
+            return [snapshot.to_dict() for snapshot in query.stream()]
+        except Exception as error:  # noqa: BLE001
+            raise StateUnavailable("querying expired sessions failed: {}".format(error))
+
+    @staticmethod
+    def _where(collection, field, operator, value):
+        """`where` across client versions, without a deprecation warning."""
+        try:
+            from google.cloud.firestore import FieldFilter
+
+            return collection.where(filter=FieldFilter(field, operator, value))
+        except Exception:  # noqa: BLE001 - the fake, or an older client
+            return collection.where(field, operator, value)
 
     def try_lease(self, user_id, holder, seconds, now=None):
         now = time.time() if now is None else now
@@ -385,13 +484,35 @@ class FirestoreStore(StateStore):
             raise StateUnavailable("releasing {} failed: {}".format(user_id, error))
 
     def healthcheck(self):
-        """One real round trip. Called at boot, where failure is fatal."""
+        """A real round trip in BOTH directions. Called at boot; fatal.
+
+        A read-only principal — `roles/datastore.viewer`, say — passes a read
+        probe happily, and the service then boots announcing durability while
+        every save fails into the degrade path. That is the exact outcome the
+        boot refusal exists to prevent, so the probe writes, reads back, and
+        deletes.
+        """
+        now = time.time()
+        reference = self._document("__healthcheck__")
         try:
-            self._document("__healthcheck__").get()
+            reference.set(
+                {
+                    "user_id": "__healthcheck__",
+                    "checked_at": now,
+                    "expires_at_epoch": now + 300.0,
+                    "expires_at": datetime.fromtimestamp(now + 300.0, tz=timezone.utc),
+                }
+            )
+            snapshot = reference.get()
+            if not getattr(snapshot, "exists", False):
+                raise RuntimeError("the probe document did not read back")
+            reference.delete()
         except Exception as error:  # noqa: BLE001
             raise StateUnavailable(
-                "cannot reach Firestore collection {!r}: {}".format(
-                    self._collection_name, error
+                "cannot use Firestore collection {!r} ({}: {}). The service account "
+                "needs roles/datastore.user — a read-only binding passes a read probe "
+                "and then loses every write.".format(
+                    self._collection_name, type(error).__name__, error
                 )
             )
         return True
@@ -439,7 +560,11 @@ class MemoryDedupe:
 class FirestoreDedupe:
     """The same promise, kept across a restart.
 
-    One small document per event id, with an expires_at a TTL policy sweeps.
+    One small document per event id. Nothing in this app ever deletes one:
+    the TTL policy `deploy.sh` enables on the `<collection>-events` group is
+    the only deleter, which is why that policy is not optional the way the
+    sessions one is.
+
     A retry that arrives after a redeploy — exactly when a slow turn caused
     the retry in the first place — must still be recognized as a retry.
 
@@ -451,37 +576,62 @@ class FirestoreDedupe:
         self._config = config
         self._store = store
         self._fallback = MemoryDedupe()
+        self._lock = threading.Lock()
         self._collection = config.firestore_collection + "-events"
 
     def seen(self, event_id):
+        """Atomic create-if-absent, because a check and a write are not one.
+
+        A `get` then a `set` is two round trips with a window between them,
+        and Slack's retry arrives precisely in windows like that: both
+        deliveries read "not there" and both run the turn. `create()` is the
+        primitive that answers the actual question — the second caller gets
+        AlreadyExists, which IS the answer "already seen".
+
+        The process-local lock closes the same window between two threads of
+        THIS process while a Firestore failure has us on the fallback.
+        """
         if not event_id:
             return False
         client = getattr(self._store, "_client", None)
         if client is None:
             return self._fallback.seen(event_id)
-        reference = client.collection(self._collection).document(str(event_id))
-        try:
-            snapshot = reference.get()
-            if getattr(snapshot, "exists", False):
-                return True
+        with self._lock:
+            reference = client.collection(self._collection).document(str(event_id))
             now = time.time()
-            reference.set(
-                {
-                    "event_id": str(event_id),
-                    "seen_at": now,
-                    "expires_at": datetime.fromtimestamp(
-                        now + self._config.dedupe_ttl_seconds, tz=timezone.utc
-                    ),
-                    "expires_at_epoch": now + self._config.dedupe_ttl_seconds,
-                }
-            )
-            return False
-        except Exception as error:  # noqa: BLE001
-            log.error("dedupe write failed, degrading to memory for this event: %s", error)
-            return self._fallback.seen(event_id)
+            try:
+                reference.create(
+                    {
+                        "event_id": str(event_id),
+                        "seen_at": now,
+                        "expires_at": datetime.fromtimestamp(
+                            now + self._config.dedupe_ttl_seconds, tz=timezone.utc
+                        ),
+                        "expires_at_epoch": now + self._config.dedupe_ttl_seconds,
+                    }
+                )
+                self._fallback.seen(event_id)  # keep the local view warm
+                return False
+            except Exception as error:  # noqa: BLE001
+                if _is_already_exists(error):
+                    return True
+                log.error("dedupe write failed, degrading to memory for this event: %s", error)
+                return self._fallback.seen(event_id)
 
 
 # --- rate limits -----------------------------------------------------------
+
+
+def refill(tokens, updated_at, now, rate, capacity):
+    """Token-bucket refill with both ends clamped.
+
+    A clock that steps backwards across a restart would otherwise make the
+    elapsed time negative, SUBTRACT tokens, and persist the negative — locking
+    a user out for far longer than the stated budget, in a way that outlives
+    the process that got the time wrong.
+    """
+    elapsed = max(0.0, float(now) - float(updated_at))
+    return max(0.0, min(float(capacity), float(tokens) + elapsed * float(rate)))
 
 
 class RateLimited(Exception):
@@ -510,8 +660,7 @@ class MemoryRateLimiter:
 
     def _refill(self, user_id, now):
         tokens, updated = self._buckets.get(user_id, (self._capacity, now))
-        tokens = min(self._capacity, tokens + (now - updated) * self._rate)
-        return tokens
+        return refill(tokens, updated, now, self._rate, self._capacity)
 
     def allow(self, user_id, now=None):
         """Spend one token. True when the call may proceed."""
@@ -547,6 +696,9 @@ class FirestoreRateLimiter(MemoryRateLimiter):
     the whole workspace, and a limit that resets on every restart does not
     make that promise.
 
+    Like the event documents, these are deleted only by the TTL policy on the
+    `<collection>-limits` group.
+
     Reads and writes are best-effort: on any Firestore error the in-process
     bucket answers, because a metered demo that stops answering is worse than
     one that occasionally meters generously.
@@ -572,9 +724,13 @@ class FirestoreRateLimiter(MemoryRateLimiter):
         try:
             snapshot = reference.get()
             document = snapshot.to_dict() if getattr(snapshot, "exists", False) else {}
-            tokens = float(document.get("tokens", self._capacity))
-            updated = float(document.get("updated_at", now))
-            tokens = min(self._capacity, tokens + (now - updated) * self._rate)
+            tokens = refill(
+                float(document.get("tokens", self._capacity)),
+                float(document.get("updated_at", now)),
+                now,
+                self._rate,
+                self._capacity,
+            )
             allowed = tokens >= 1.0
             if allowed:
                 tokens -= 1.0
@@ -603,9 +759,13 @@ class FirestoreRateLimiter(MemoryRateLimiter):
         try:
             snapshot = reference.get()
             document = snapshot.to_dict() if getattr(snapshot, "exists", False) else {}
-            tokens = float(document.get("tokens", self._capacity))
-            updated = float(document.get("updated_at", now))
-            tokens = min(self._capacity, tokens + (now - updated) * self._rate)
+            tokens = refill(
+                float(document.get("tokens", self._capacity)),
+                float(document.get("updated_at", now)),
+                now,
+                self._rate,
+                self._capacity,
+            )
         except Exception:  # noqa: BLE001
             return super().retry_after(user_id, now)
         if tokens >= 1.0 or self._rate <= 0:

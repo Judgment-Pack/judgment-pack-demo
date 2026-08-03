@@ -29,7 +29,7 @@ The image carries the demo engine, all of it pinned:
 
 | piece | where it comes from | proof at build time |
 |---|---|---|
-| `jpack` | `ghcr.io/judgment-pack/judgment-pack:0.12.0`, multi-stage COPY | `jpack spec test-conformance --quiet`, and `packs validate` against the baked project |
+| `jpack` | `ghcr.io/judgment-pack/judgment-pack:0.13.0`, multi-stage COPY | `jpack spec test-conformance --quiet`, then `packs validate` **and `packs verify`** against the baked project — the second catches a runtime that predates the project's reviewed-set lock |
 | `gateway` | built from the pinned commit (`GATEWAY_REF`) | `gateway conform` replays its frozen corpus |
 | derivation rule | built from the pinned commit (`DERIVATION_REF`) | `agreement.py` + its unit corpus |
 | `enterprise-demo` | this repository, baked read-only | copied per session, never edited in place |
@@ -97,7 +97,12 @@ both implementations; `bot/state.py` holds the live objects; `bot/reconcile.py` 
 ### What persists
 
 One document per Slack user (Firestore collection `slack-demo-sessions`, or a dict entry with the
-memory backend). It is *metadata about where somebody is in the demo* — nothing a flow executes on:
+memory backend), plus two derived collections: `<collection>-events` holds one small document per
+Slack event id, so a retry is recognized as a retry across a restart, and `<collection>-limits`
+holds the per-user budgets, so a redeploy does not hand everybody a fresh allowance. Both carry an
+`expires_at`, and `deploy.sh` enables a TTL policy on **all three** collection groups — the
+running app deletes expired session documents itself, but nothing in the app ever deletes those
+two. It is *metadata about where somebody is in the demo* — nothing a flow executes on:
 
 | persisted | why it can be |
 |---|---|
@@ -108,7 +113,7 @@ memory backend). It is *metadata about where somebody is in the demo* — nothin
 | `scratch_dir` | a **path hint**: where their project *was*. Never proof it still exists |
 | `data` (JSON-safe subset) | the drafted pack document, the decision id, the policy text, flow-local scalars |
 | `expires_at` (+ `expires_at_epoch`) | a real timestamp, so a Firestore TTL policy can do the deleting |
-| `lease_holder`, `lease_expires_at` | the multi-instance seam, below |
+| `lease_holder`, `lease_expires_at_epoch`, `lease_expires_at` | the multi-instance seam, below. **Written only by `try_lease`** — an ordinary save must never claim or erase a lease, so `to_document` does not emit these at all and `save` merges rather than replacing |
 
 | NOT persisted, ever | why it cannot be |
 |---|---|
@@ -153,8 +158,10 @@ claimed otherwise, is the one failure this demo cannot afford.
 
 ### The multi-instance seam
 
-Every persisted document carries `lease_holder` and `lease_expires_at`, and `FirestoreStore` can
-take one in a transaction (`try_lease`). **Nothing in the request path depends on it today** — the
+A document that has been leased carries `lease_holder`, `lease_expires_at_epoch` and
+`lease_expires_at`, written **only** by `try_lease` in a transaction (an ordinary save neither
+writes nor erases them — it merges, and `to_document` does not emit them). **Nothing in the
+request path depends on it today** — the
 single instance is serialized by the per-session `threading.Lock` — and it is a seam, not a
 guarantee. A real multi-instance version needs, additionally:
 
@@ -170,22 +177,42 @@ than shipping a lease that looks like a solution.
 
 * **Firestore configured but unreachable at boot → refuse to start**, loudly, exactly like a
   missing signing secret. A demo told to remember that silently forgets is worse than one that
-  will not start and says why.
+  will not start and says why. The boot probe **writes, reads back and deletes**: a read-only
+  principal would otherwise sail through it and then lose every save.
+* **A failed READ is never read as absence.** `load()` answers with the document, `None` for a
+  user who has none, or `LOAD_FAILED` — three answers, because conflating the last two is how a
+  transient error destroys somebody's progress. A session built without a successful read is
+  marked `persist=False`: the turn is served, the user is told in one line, and **nothing is
+  written for them** until a read proves what is actually there. Recovery is declared by a
+  successful read, never by a successful write — the write leg is usually healthy while the read
+  leg is not.
 * **Unreachable mid-run → log loudly and degrade to this process's memory for that turn.** The
-  user's click is answered; the log says durability is suspended. Dropping the turn would teach
-  them nothing, and a restart during a degraded window loses that session — which is the memory
-  backend's normal behavior, not a new failure.
+  user's click is answered and the log says durability is suspended. A restart during a degraded
+  window loses whatever was not written, which is the memory backend's normal behavior; what
+  cannot happen is a live document being overwritten by an empty one.
+* **Persistence granularity is one turn.** A session is written at the start of a turn and again
+  in its `finally`, so a crash mid-turn rewinds to the start of that turn — even for a step the
+  user already watched land in Slack (author's "Registered." message is posted before the step
+  that follows it is persisted). Each button click is its own turn, so the rewind is bounded to
+  one, and the reconciler is what makes the rewind coherent rather than confusing.
 
 ### Hygiene and cost
 
-Sessions expire two hours after their last message: the sweeper thread deletes the scratch copy
-and reaps the gateway process, and the Firestore TTL policy on `expires_at` deletes the document
-(a policy cannot kill a process, which is why both exist). The table is still capped — the least
-recently seen session is evicted when a new one would exceed the cap.
+Sessions expire two hours after their last message. The sweeper thread (60s) kills the gateway
+process and deletes the scratch copy — things no TTL policy can reach — and deletes the document
+too; the TTL policy is the backstop for when no instance is running at all, and the only deleter
+the `-events` and `-limits` collections have. The table is still capped: the least recently seen
+session this process holds is evicted when a new one would exceed the cap.
 
-Cost: a session document is a few kilobytes and a turn is a handful of reads and writes. A demo
-workspace lives inside Firestore's free tier (50k reads / 20k writes per day) without trying;
-the always-allocated Cloud Run instance remains the only real line item.
+**A turn costs one document read and one document write.** Expiry is not a turn's business: the
+turn path never scans or queries the collection, the sweeper asks a bounded
+`where(expires_at_epoch <= now).limit(...)` question off the table lock, and other users'
+documents are the TTL policy's job. (An earlier version scanned the whole collection on every
+turn, under the table lock — ~24 reads per click and ~34k reads a day from the sweeper alone.
+`tests/test_state_backends.py` now asserts the one-read-one-write shape so it cannot come back.)
+Dedupe adds one create per Slack event and the limiter one read and one write per metered call. A
+demo workspace lives inside Firestore's free tier (50k reads / 20k writes per day) without
+trying; the always-allocated Cloud Run instance remains the only real line item.
 
 ## Security and operational choices, with reasons
 
