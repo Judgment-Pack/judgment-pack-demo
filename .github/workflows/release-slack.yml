@@ -77,7 +77,16 @@ jobs:
     outputs:
       url: ${{ steps.promote.outputs.url }}
       image: ${{ steps.build.outputs.image }}
+      # The secrets context is not allowed in a job-level `if`, so the
+      # presence of the app id is exported here — a boolean, never the value —
+      # and the wiring job conditions on the output.
+      wire_slack: ${{ steps.wire-flag.outputs.wire }}
     steps:
+      - id: wire-flag
+        name: Does a Slack app id exist to wire?
+        env:
+          HAS_APP_ID: ${{ secrets.SLACK_APP_ID != '' }}
+        run: echo "wire=${HAS_APP_ID}" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Check the environment is configured
@@ -352,7 +361,7 @@ jobs:
     # re-point, job skipped entirely. A step-level condition would still have
     # queued the job — and an environment gate on it would still have asked
     # for a second click.
-    if: ${{ secrets.SLACK_APP_ID != '' }}
+    if: ${{ needs.deploy.outputs.wire_slack == 'true' }}
     runs-on: ubuntu-latest
     # Deliberately NO `environment:`. The two Slack config tokens are
     # REPOSITORY secrets; an environment secret would drag this job through
