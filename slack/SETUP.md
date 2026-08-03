@@ -55,9 +55,17 @@ gcloud config set project <YOUR_PROJECT_ID>
 `gcloud auth login` opens a browser. Every step below fails at the door without it, by design —
 the scripts check for a usable token before they create anything.
 
-**Prefer a project of its own?** One command creates it, attaches billing, and deploys — this
-demo runs drafted packs and a signing gateway per user, so its own billing line and a single
-`gcloud projects delete` to erase it are worth the minute:
+Every setting the deployment has — project, region, service name, the model, the instance
+shape — lives in one gitignored file. Copy it once and edit what you care about; an exported
+variable still overrides it, and with no file at all you get the defaults:
+
+```bash
+cp slack/deploy/deploy.env.example slack/deploy/deploy.env
+```
+
+**Prefer a project of its own?** One command creates it, attaches billing, records the id in
+that file, and deploys — this demo runs drafted packs and a signing gateway per user, so its
+own billing line and a single `gcloud projects delete` to erase it are worth the minute:
 
 ```bash
 ./slack/deploy/new-project.sh                 # id defaults to jpack-slack-demo-<yymmdd>

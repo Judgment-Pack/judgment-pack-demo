@@ -19,6 +19,12 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 die() { printf '\nERROR: %s\n' "$*" >&2; exit 1; }
 
+# The same one place deploy.sh reads: PROJECT_ID, BILLING_ACCOUNT, and the
+# optional ORGANIZATION/FOLDER may all live there instead of in your shell.
+DEPLOY_ENV="${DEPLOY_ENV:-${here}/deploy.env}"
+# shellcheck disable=SC1090
+[ -f "${DEPLOY_ENV}" ] && . "${DEPLOY_ENV}"
+
 command -v gcloud >/dev/null || die "gcloud is not installed — https://cloud.google.com/sdk/docs/install"
 
 # A project id is global, immutable, and 6-30 characters of [a-z][a-z0-9-].
@@ -67,6 +73,21 @@ else
   echo "  linked to ${account}"
 fi
 
+# Remember it, so deploy.sh and every re-run land in the same project without
+# anyone having to hold the id in their head or their shell.
+if [ ! -f "${DEPLOY_ENV}" ]; then
+  cp "${here}/deploy.env.example" "${DEPLOY_ENV}"
+  echo "  wrote ${DEPLOY_ENV} from the example"
+fi
+if grep -qE '^PROJECT_ID=' "${DEPLOY_ENV}"; then
+  tmp="$(mktemp)"
+  sed "s|^PROJECT_ID=.*|PROJECT_ID=\"\${PROJECT_ID:-${PROJECT_ID}}\"|" "${DEPLOY_ENV}" > "${tmp}"
+  mv "${tmp}" "${DEPLOY_ENV}"
+else
+  printf 'PROJECT_ID="${PROJECT_ID:-%s}"\n' "${PROJECT_ID}" >> "${DEPLOY_ENV}"
+fi
+echo "  ${DEPLOY_ENV} now names ${PROJECT_ID}"
+
 say "3/3 Deploy"
-echo "  handing off to deploy.sh with PROJECT_ID=${PROJECT_ID}"
+echo "  handing off to deploy.sh"
 PROJECT_ID="${PROJECT_ID}" exec "${here}/deploy.sh"

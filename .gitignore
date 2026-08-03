@@ -4,3 +4,4 @@ gateway-state/*/*
 !gateway-state/*/.gitkeep
 __pycache__/
 .env
+slack/deploy/deploy.env

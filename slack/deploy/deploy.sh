@@ -15,14 +15,31 @@
 # alone (rotate with `gcloud secrets versions add`).
 set -euo pipefail
 
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+root="$(cd "${here}/../.." && pwd)"   # the repository root: the build context
+
+# One place for every deployment setting: slack/deploy/deploy.env, copied from
+# the committed .example and gitignored. Its lines are `NAME="${NAME:-value}"`,
+# so an exported variable still wins over the file, and the file wins over the
+# defaults below.
+DEPLOY_ENV="${DEPLOY_ENV:-${here}/deploy.env}"
+# shellcheck disable=SC1090
+[ -f "${DEPLOY_ENV}" ] && . "${DEPLOY_ENV}"
+
 SERVICE="${SERVICE:-judgment-pack-slack-demo}"
 REGION="${REGION:-us-central1}"
 AR_REPO="${AR_REPO:-judgment-pack}"
-GEMINI_MODEL="${GEMINI_MODEL:-gemini-3.1-pro-preview}"
+GEMINI_MODEL="${GEMINI_MODEL:-gemini-3.6-flash}"
 PROJECT_ID="${PROJECT_ID:-$(gcloud config get-value project 2>/dev/null)}"
-
-here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-root="$(cd "${here}/../.." && pwd)"   # the repository root: the build context
+MIN_INSTANCES="${MIN_INSTANCES:-1}"
+MAX_INSTANCES="${MAX_INSTANCES:-1}"
+CONCURRENCY="${CONCURRENCY:-20}"
+CPU="${CPU:-1}"
+MEMORY="${MEMORY:-512Mi}"
+TIMEOUT="${TIMEOUT:-300}"
+DEMO_PROJECT="${DEMO_PROJECT:-/opt/judgment-pack/enterprise-demo}"
+SESSION_ROOT="${SESSION_ROOT:-/tmp}"
+GATEWAY_AUTHORITY="${GATEWAY_AUTHORITY:-gateway:judgment-pack-slack}"
 
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 die() { printf '\nERROR: %s\n' "$*" >&2; exit 1; }
@@ -140,15 +157,15 @@ gcloud run deploy "${SERVICE}" \
   --region "${REGION}" \
   --platform managed \
   --allow-unauthenticated \
-  --min-instances=1 \
-  --max-instances=1 \
+  --min-instances="${MIN_INSTANCES}" \
+  --max-instances="${MAX_INSTANCES}" \
   --no-cpu-throttling \
-  --concurrency=20 \
-  --cpu=1 \
-  --memory=512Mi \
-  --timeout=300 \
+  --concurrency="${CONCURRENCY}" \
+  --cpu="${CPU}" \
+  --memory="${MEMORY}" \
+  --timeout="${TIMEOUT}" \
   --set-secrets "SLACK_BOT_TOKEN=SLACK_BOT_TOKEN:latest,SLACK_SIGNING_SECRET=SLACK_SIGNING_SECRET:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest" \
-  --set-env-vars "GEMINI_MODEL=${GEMINI_MODEL},DEMO_PROJECT=/opt/judgment-pack/enterprise-demo,SESSION_ROOT=/tmp,GATEWAY_AUTHORITY=gateway:judgment-pack-slack" \
+  --set-env-vars "GEMINI_MODEL=${GEMINI_MODEL},DEMO_PROJECT=${DEMO_PROJECT},SESSION_ROOT=${SESSION_ROOT},GATEWAY_AUTHORITY=${GATEWAY_AUTHORITY}" \
   --project "${PROJECT_ID}" --quiet
 
 URL="$(gcloud run services describe "${SERVICE}" --region "${REGION}" \
