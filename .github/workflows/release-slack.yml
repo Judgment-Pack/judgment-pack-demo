@@ -106,10 +106,10 @@ jobs:
           # back a credential that lives minutes.
           workload_identity_provider: ${{ vars.WIF_PROVIDER }}
           service_account: ${{ vars.DEPLOY_SA }}
-          # The quota project the credential bills API calls to. Without it,
-          # `gcloud builds submit`'s storage preflight fails USER_PROJECT_DENIED
-          # no matter what the deployer is granted — the call has no project to
-          # count against, not too few roles on this one.
+          # The project the credential is scoped to. (An earlier comment here
+          # blamed a missing quota project for the submit failures; the real
+          # cause was the bucket-ownership check below. This input is kept as
+          # correct hygiene, not as that fix.)
           project_id: ${{ vars.PROJECT_ID }}
 
       - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
@@ -147,11 +147,18 @@ jobs:
           # cloudbuild.yaml runs `bot.dryrun --script` inside the built image
           # and only then pushes it, so what lands in the registry has already
           # run the whole demo. The digest is what gets deployed.
+          # --gcs-source-staging-dir is load-bearing, not cosmetic: without an
+          # explicit staging dir, `builds submit` verifies bucket ownership by
+          # LISTING the project's buckets — storage.buckets.list at PROJECT
+          # scope, which no bucket-scoped grant provides. The deployer holds
+          # rights on this one bucket, deliberately; naming it skips the list.
+          # Proven by replicating this exact call under impersonation.
           gcloud builds submit . \
             --region "${CLOUDBUILD_REGION}" \
             --config slack/deploy/cloudbuild.yaml \
             --substitutions "_IMAGE=${IMAGE}" \
             --service-account "projects/${PROJECT_ID}/serviceAccounts/${BUILD_SA}" \
+            --gcs-source-staging-dir "gs://${PROJECT_ID}_cloudbuild/source" \
             --project "${PROJECT_ID}"
 
           DIGEST="$(gcloud artifacts docker images describe "${IMAGE}" \
