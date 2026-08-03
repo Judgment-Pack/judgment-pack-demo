@@ -129,6 +129,7 @@ def _do_screen(turn, deps):
                 )
             ],
             done=True,
+            failed=True,
         )
 
     body = [
@@ -157,7 +158,7 @@ def _do_screen(turn, deps):
                 )
             )
         )
-        return FlowResult(replies=[reply(body, text="Acquisition failed")], done=True)
+        return FlowResult(replies=[reply(body, text="Acquisition failed")], done=True, failed=True)
 
     checked = deps.desk.attest(session, project, "check")
     body.append(
@@ -180,7 +181,7 @@ def _do_screen(turn, deps):
                 "stands; the operator's log has the rest.".format(checked.returncode)
             )
         )
-        return FlowResult(replies=[reply(body, text="No verdict")], done=True)
+        return FlowResult(replies=[reply(body, text="No verdict")], done=True, failed=True)
 
     derived = _read_inputs(project)
     if derived:
@@ -205,7 +206,7 @@ def _do_screen(turn, deps):
     ran = deps.runtime.graph_evaluate(project, GRAPH, INPUTS)
     if not ran.ok or not ran.payload:
         pending.append(reply(blocks.error_blocks("The graph evaluation refused", ran.message())))
-        return FlowResult(replies=pending, done=True)
+        return FlowResult(replies=pending, done=True, failed=True)
 
     tail = blocks.disposition_blocks(
         ran.payload, title="The composite disposition, from an attested screening"
@@ -263,7 +264,9 @@ def _do_tamper(turn, deps):
         tampered = deps.desk.attest(session, project, "tamper", "--match-count", "0")
     except DeskError as error:
         return FlowResult(
-            replies=[reply(blocks.error_blocks("The desk is gone", str(error)))], done=True
+            replies=[reply(blocks.error_blocks("The desk is gone", str(error)))],
+            done=True,
+            failed=True,
         )
     body.append(blocks.code(_scrub(tampered.narration, project, deps.config)))
     if tampered.returncode != 0:
@@ -277,7 +280,7 @@ def _do_tamper(turn, deps):
             )
         )
         deps.desk.stop(session)
-        return FlowResult(replies=[reply(body, text="Forgery failed")], done=True)
+        return FlowResult(replies=[reply(body, text="Forgery failed")], done=True, failed=True)
 
     checked = deps.desk.attest(session, project, "check")
     body.append(blocks.section("*Re-verifying* — `attest check` against the same sealed registry:"))
@@ -313,7 +316,7 @@ def _do_tamper(turn, deps):
     if not ran.ok or not ran.payload:
         pending.append(reply(blocks.error_blocks("The graph evaluation refused", ran.message())))
         deps.desk.stop(session)
-        return FlowResult(replies=pending, done=True)
+        return FlowResult(replies=pending, done=True, failed=True)
 
     tail = blocks.disposition_blocks(
         ran.payload, title="The evaluation the forgery bought"

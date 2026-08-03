@@ -149,17 +149,33 @@ def _show_book(turn, deps):
         return FlowResult(
             replies=[reply(blocks.error_blocks("The demo project is unavailable", str(error)))],
             done=True,
+            failed=True,
         )
     records = deps.runtime.audit_records(project)
     if not records:
+        # An empty book shown is not the audit-trail use case seen: leave the
+        # flow un-credited and put the door to use case 1 in the same message.
+        session.leave()
         return FlowResult(
             replies=[
                 reply(
-                    [blocks.header("4 · The decision book"), blocks.section(EMPTY)],
+                    [
+                        blocks.header("4 · The decision book"),
+                        blocks.section(EMPTY),
+                        blocks.actions(
+                            [
+                                blocks.button(
+                                    "Run use case 1 first →",
+                                    blocks.ACTION_START + "judge",
+                                    style="primary",
+                                ),
+                                blocks.button("Back to the menu", blocks.ACTION_MENU),
+                            ]
+                        ),
+                    ],
                     text="The book is empty",
                 )
             ],
-            done=True,
         )
 
     body = [blocks.header("4 · The decision book"), blocks.section(INTRO)]
@@ -222,6 +238,7 @@ def _replay(turn, deps):
         shapes = sorted(
             {record_shape(record) for record in deps.runtime.audit_records(project)}
         )
+        session.leave()
         return FlowResult(
             replies=[
                 reply(
@@ -232,9 +249,20 @@ def _replay(turn, deps):
                         "and has no inputs of its own — run use case 1, which writes single-pack "
                         "records, and come back.".format(", ".join(shapes) or "nothing"),
                     )
+                    + [
+                        blocks.actions(
+                            [
+                                blocks.button(
+                                    "Run use case 1 first →",
+                                    blocks.ACTION_START + "judge",
+                                    style="primary",
+                                ),
+                                blocks.button("Back to the menu", blocks.ACTION_MENU),
+                            ]
+                        )
+                    ]
                 )
             ],
-            done=True,
         )
     record = records[0]
     pack = record.get("pack") or {}
@@ -255,6 +283,7 @@ def _replay(turn, deps):
                 )
             ],
             done=True,
+            failed=True,
         )
 
     origin = (
@@ -279,7 +308,7 @@ def _replay(turn, deps):
     ran = deps.runtime.evaluate(project, decision_id, facts, evidence, label="replay")
     if not ran.ok or not ran.payload:
         body.extend(blocks.error_blocks("The replay refused", ran.message()))
-        return FlowResult(replies=[reply(body, text="Replay refused")], done=True)
+        return FlowResult(replies=[reply(body, text="Replay refused")], done=True, failed=True)
 
     original = json.dumps(record.get("disposition"), sort_keys=True, separators=(",", ":"))
     replayed = json.dumps(ran.payload.get("disposition"), sort_keys=True, separators=(",", ":"))

@@ -17,11 +17,13 @@ Request handling shape, and why:
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import re
 import sys
 import threading
+import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
@@ -95,20 +97,89 @@ EVENTS_PATH = os.environ.get("SLACK_EVENTS_PATH", "/slack/events")
 # --- helpers ---------------------------------------------------------------
 
 
-def _post(client, channel, replies):
-    for one in replies:
-        client.chat_postMessage(channel=channel, blocks=one.blocks, text=one.text)
-
-
-def _say(client, channel, markdown):
-    client.chat_postMessage(
-        channel=channel, blocks=[blocks.section(markdown)], text="Judgment Pack demo"
-    )
-
-
 def _dm_channel(client, user_id):
     opened = client.conversations_open(users=user_id)
     return opened["channel"]["id"]
+
+
+class Delivery:
+    """Where one turn's replies go, with one honest fallback.
+
+    Most turns target the user's DM. Interactive payloads, though, carry the
+    channel of the message whose button was clicked, and nothing guarantees
+    the bot can post there (`not_in_channel` / `channel_not_found` — and no
+    prefix test identifies these up front, since every DM id starts with `D`,
+    a colleague's included). The first refused post switches the rest of the
+    turn to the user's DM, tells the invoking surface once via the command's
+    response_url when there is one, and re-sends the reply that failed. The
+    user never sees silence.
+    """
+
+    def __init__(self, client, user_id, channel, respond=None):
+        self.client = client
+        self.user_id = user_id
+        self.target = channel  # None resolves to the DM on first use
+        self.respond = respond
+        self._dm = None
+
+    def dm(self):
+        if self._dm is None:
+            self._dm = _dm_channel(self.client, self.user_id)
+        return self._dm
+
+    def _channel(self):
+        if self.target is None:
+            self.target = self.dm()
+        return self.target
+
+    def _send(self, block_list, text):
+        self.client.chat_postMessage(channel=self._channel(), blocks=block_list, text=text)
+
+    def post_one(self, block_list, text):
+        try:
+            self._send(block_list, text)
+            return
+        except Exception as error:  # noqa: BLE001 - inspected, re-raised when foreign
+            code = _slack_error_code(error)
+            if code not in ("not_in_channel", "channel_not_found") or self.target == self.dm():
+                raise
+            log.info(
+                "cannot post in %s (%s); the rest of this turn goes to the DM",
+                self.target,
+                code,
+            )
+        self.target = self.dm()
+        if self.respond is not None:
+            try:
+                self.respond(
+                    text="I cannot post in this conversation, so I answered in our DM."
+                )
+            except Exception:  # noqa: BLE001 - the pointer is a courtesy
+                log.warning("could not post the ephemeral pointer")
+            self.respond = None
+        self._send(block_list, text)
+
+    def post(self, replies):
+        for one in replies:
+            self.post_one(one.blocks, one.text)
+
+    def say(self, markdown):
+        self.post_one([blocks.section(markdown)], "Judgment Pack demo")
+
+
+def _slack_error_code(error):
+    """The `error` member of a Slack API refusal, whatever SDK raised it."""
+    response = getattr(error, "response", None)
+    try:
+        return (response or {}).get("error", "")
+    except AttributeError:
+        return ""
+
+
+def _user_tag(user_id):
+    """A stable non-PII handle for the metrics line: enough to count distinct
+    users and follow one user's funnel, nothing to look one up by."""
+    return hashlib.sha256((user_id or "?").encode()).hexdigest()[:8]
 
 
 def _run(job, *args, **kwargs):
@@ -123,7 +194,7 @@ def _run(job, *args, **kwargs):
     POOL.submit(wrapped)
 
 
-def _turn(client, user_id, channel, build, publish_home=False):
+def _turn(client, user_id, channel, build, publish_home=False, respond=None):
     """Run one user's turn: serialized, budgeted, streamed, and never silent.
 
     Four guards, in order, and each one answers rather than swallowing:
@@ -148,56 +219,88 @@ def _turn(client, user_id, channel, build, publish_home=False):
     user is owed the reason before the consequence.
     """
     session = SESSIONS.get(user_id)
-    target = channel or _dm_channel(client, user_id)
+    delivery = Delivery(client, user_id, channel, respond)
+    started = time.monotonic()
+    outcome = "ok"
+    # The funnel line names the turn by where it STARTED: a flow that ends
+    # this turn (finished, failed, left) has already cleared these fields by
+    # the time the line is written, and a line that only ever showed the
+    # after-state could not tell a drop-off from an idle menu visit.
+    entry_flow = session.active_flow or "-"
+    entry_step = session.step
 
-    with TurnLock(session) as held:
-        if not held:
-            _say(client, target, content.BUSY)
-            log.info("dropped a concurrent turn for %s", user_id)
-            return
-        if not TURN_LIMITER.allow(user_id):
-            wait = TURN_LIMITER.retry_after(user_id)
-            _say(
-                client,
-                target,
-                content.TURNS_LIMITED.format(
-                    n=CONFIG.turns_per_hour, minutes=max(1, wait // 60)
-                ),
-            )
-            return
-        if not WORK.acquire(timeout=WORK_WAIT_SECONDS):
-            _say(client, target, content.BUSY_GLOBAL)
-            log.info("work semaphore full; refused a turn for %s", user_id)
-            return
-        try:
-            if not session.persist:
-                # The backend read failed: this turn is served on a blank
-                # session and NOTHING is written for this user until a read
-                # succeeds. Say so — silently pretending they are new is how
-                # progress gets destroyed.
-                _say(client, target, content.STATE_UNAVAILABLE)
-            notice = RECONCILER.reconcile(session)
-            if notice:
-                _say(client, target, notice)
-            deps = replace(DEPS, sink=lambda replies: _post(client, target, replies))
-            replies = build(session, deps) or []
-            _post(client, target, replies)
-        except Exception:  # noqa: BLE001 - a dropped turn is worse than an ugly one
-            log.error("turn for %s failed:\n%s", user_id, traceback.format_exc())
+    try:
+        with TurnLock(session) as held:
+            if not held:
+                outcome = "busy"
+                delivery.say(content.BUSY)
+                log.info("dropped a concurrent turn for %s", user_id)
+                return
+            if not TURN_LIMITER.allow(user_id):
+                outcome = "limited"
+                wait = TURN_LIMITER.retry_after(user_id)
+                delivery.say(
+                    content.TURNS_LIMITED.format(
+                        n=CONFIG.turns_per_hour, minutes=max(1, wait // 60)
+                    )
+                )
+                return
+            if not WORK.acquire(timeout=WORK_WAIT_SECONDS):
+                outcome = "busy-global"
+                delivery.say(content.BUSY_GLOBAL)
+                log.info("work semaphore full; refused a turn for %s", user_id)
+                return
             try:
-                _say(client, target, content.TURN_FAILED)
-            except Exception:  # noqa: BLE001
-                log.error("could not even report the failure to %s", user_id)
-        finally:
-            # Whatever the turn did to the session — advanced a step, finished
-            # a flow, reset one — is written back before the lock is released.
-            SESSIONS.save(session)
-            WORK.release()
-        if publish_home:
-            try:
-                client.views_publish(user_id=user_id, view=_home_view(session))
-            except Exception:  # noqa: BLE001 - the message already landed
-                log.warning("could not refresh the home tab for %s", user_id)
+                entry_flow = session.active_flow or "-"
+                entry_step = session.step
+                if not session.persist:
+                    # The backend read failed: this turn is served on a blank
+                    # session and NOTHING is written for this user until a read
+                    # succeeds. Say so — silently pretending they are new is how
+                    # progress gets destroyed.
+                    delivery.say(content.STATE_UNAVAILABLE)
+                notice = RECONCILER.reconcile(session)
+                if notice:
+                    delivery.say(notice)
+                deps = replace(DEPS, sink=delivery.post)
+                replies = build(session, deps) or []
+                delivery.post(replies)
+            except Exception:  # noqa: BLE001 - a dropped turn is worse than an ugly one
+                outcome = "failed"
+                log.error("turn for %s failed:\n%s", user_id, traceback.format_exc())
+                try:
+                    delivery.say(content.TURN_FAILED)
+                except Exception:  # noqa: BLE001
+                    log.error("could not even report the failure to %s", user_id)
+            finally:
+                # The router and the flows stamp what the turn meant for the
+                # funnel (finished, left, flow-failed); an exception outranks
+                # the stamp, and the stamp must never persist either way.
+                stamped = session.data.pop("funnel_outcome", None)
+                if outcome == "ok" and stamped:
+                    outcome = stamped
+                # Whatever the turn did to the session — advanced a step, finished
+                # a flow, reset one — is written back before the lock is released.
+                SESSIONS.save(session)
+                WORK.release()
+            if publish_home:
+                try:
+                    client.views_publish(user_id=user_id, view=_home_view(session))
+                except Exception:  # noqa: BLE001 - the message already landed
+                    log.warning("could not refresh the home tab for %s", user_id)
+    finally:
+        # The one funnel line this service emits: every turn, every outcome.
+        # Cloud Logging retains these; log-based metrics count them.
+        log.info(
+            "event=turn user=%s flow=%s step=%d completed=%d outcome=%s persisted=%d ms=%d",
+            _user_tag(user_id),
+            entry_flow,
+            entry_step,
+            len(session.completed),
+            outcome,
+            int(session.persist),
+            int((time.monotonic() - started) * 1000),
+        )
 
 
 def _home_view(session):
@@ -282,36 +385,51 @@ def on_message(body, event, client):
 
     def build(session, deps):
         session.welcomed = True
-        lowered = text.lower()
-        if lowered in ("menu", "help", "start", "hi", "hello"):
+        # People type "Help!" and "what is this?" — match what they mean,
+        # not their punctuation.
+        lowered = re.sub(r"[^a-z0-9 ]+", "", text.lower()).strip()
+        if lowered in ("stop", "quit", "cancel", "exit", "start over", "reset", "menu"):
+            if session.active_flow:
+                flow = flows.BY_ID.get(session.active_flow)
+                title = flow.TITLE if flow else session.active_flow
+                session.leave()
+                return [
+                    flows.menu(
+                        session,
+                        intro="*Left {}* — it is not marked complete, and your place is "
+                        "kept: its own buttons resume it where you stopped, and starting "
+                        "it from this menu starts it fresh.".format(title),
+                    )
+                ]
             return [flows.menu(session)]
-        if lowered in ("about", "what is this"):
+        if lowered in ("help", "start", "hi", "hello", "hey"):
+            return [flows.menu(session)]
+        if lowered in ("about", "what is this", "whats this"):
             return [flows.about(session)]
         replies = flows.dispatch(Turn(user_id=user_id, session=session, text=text), deps)
         if replies is not None:
             return replies
         # Nothing running: conversational glue, attributed like every other
-        # model utterance, then the menu.
+        # model utterance, then the menu. When the model cannot answer, its
+        # note says why — a question answered with a bare menu reads as a
+        # bot that ignored it.
         glue = deps.model.glue(user_id, text, situation="at the menu, nothing running")
-        replies = []
-        if glue.ok:
-            replies.append(
-                flows.reply(
-                    blocks.model_blocks(glue.text, deps.model.name, label="Host reply"),
-                    text="Hello",
-                )
-            )
-        replies.append(flows.menu(session))
-        return replies
+        return [
+            flows.reply(
+                blocks.model_blocks(glue.text, deps.model.name, label="Host reply", note=glue.note),
+                text="Hello",
+            ),
+            flows.menu(session),
+        ]
 
     _run(_turn, client, user_id, channel, build)
 
 
 @app.command("/jpack")
-def on_command(ack, body, client):
+def on_command(ack, body, client, respond):
     ack()
     user_id = body.get("user_id")
-    channel = body.get("channel_id")
+    channel = body.get("channel_id") or ""
     argument = (body.get("text") or "").strip().lower()
     if not user_id:
         return
@@ -324,15 +442,42 @@ def on_command(ack, body, client):
             return flows.start(Turn(user_id=user_id, session=session), deps, argument)
         return [flows.menu(session)]
 
-    # The slash command answers in a DM when the app is not in the channel it
-    # was typed in: a flow is a conversation, not a one-shot reply.
-    _run(_turn, client, user_id, channel, build)
+    # Every slash turn lives in the DM. Half of this demo is typed input —
+    # the pasted policy, questions, the menu keywords — and `message.im` is
+    # the only message event the app subscribes to, so a use case parked in
+    # a channel would be a conversation that cannot hear the user. When the
+    # command came from anywhere else, that surface gets one ephemeral
+    # pointer; posting the pointer needs no membership, the response_url
+    # carries it.
+    def deliver():
+        dm = _dm_channel(client, user_id)
+        if channel and channel != dm:
+            try:
+                respond(
+                    text="Answered in our DM — this demo runs on typed input too "
+                    "(policies, questions), so the conversation lives there."
+                )
+            except Exception:  # noqa: BLE001 - the pointer is a courtesy
+                log.warning("could not post the ephemeral pointer for /jpack")
+        _turn(client, user_id, dm, build)
+
+    _run(deliver)
 
 
 @app.action(blocks.ACTION_MENU)
 def on_menu(ack, body, client):
     ack()
-    _respond_with(body, client, lambda session, deps: [flows.menu(session)])
+
+    def build(session, deps):
+        # "Back to the menu" means it: a menu that renders while the flow
+        # stays active is an escape hatch painted on a wall. Leaving credits
+        # nothing and KEEPS the place — the flow's own buttons resume it at
+        # the step the user left (flows.resume), so looking at the menu
+        # never costs them the cases they already ran.
+        session.leave()
+        return [flows.menu(session)]
+
+    _respond_with(body, client, build)
 
 
 @app.action(blocks.ACTION_ABOUT)
@@ -363,9 +508,11 @@ def on_step(ack, body, client):
     user_id = (body.get("user") or {}).get("id")
 
     def build(session, deps):
-        if session.active_flow != flow_id:
-            # A button from an earlier message: re-enter that flow rather than
-            # dropping the click on the floor.
+        if session.active_flow != flow_id and not flows.resume(session, flow_id):
+            # A button from an earlier message, for a flow the user neither
+            # holds nor left: enter it fresh rather than dropping the click.
+            # (When they LEFT it, resume() just put them back at their step,
+            # and the dispatch below continues from there.)
             return flows.start(Turn(user_id=user_id, session=session), deps, flow_id)
         turn = Turn(user_id=user_id, session=session, action=token)
         return flows.dispatch(turn, deps) or [flows.menu(session)]

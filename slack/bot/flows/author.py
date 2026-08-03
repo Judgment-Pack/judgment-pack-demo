@@ -293,6 +293,12 @@ def _register(deps, session, project, decision_id, pack, body):
     return False
 
 
+def consumes_text(session):
+    """Free text is the policy — but only at the paste step. The later steps
+    ignore it, and the router's question guard must cover them."""
+    return session.step == 0
+
+
 def handle(turn, deps):
     session = turn.session
 
@@ -348,6 +354,7 @@ def _do_draft(turn, deps):
         return FlowResult(
             replies=[reply(blocks.error_blocks("The demo project is unavailable", str(error)))],
             done=True,
+            failed=True,
         )
 
     body = [
@@ -390,10 +397,12 @@ def _do_draft(turn, deps):
     pack, valid = _validate_loop(deps, turn, pack, policy_text, body)
     session.data["author_pack"] = pack
     if not valid:
-        return FlowResult(replies=[reply(body, text="The validator refused the draft")], done=True)
+        return FlowResult(
+            replies=[reply(body, text="The validator refused the draft")], done=True, failed=True
+        )
 
     if not _register(deps, session, project, decision_id, pack, body):
-        return FlowResult(replies=[reply(body, text="Registration refused")], done=True)
+        return FlowResult(replies=[reply(body, text="Registration refused")], done=True, failed=True)
 
     session.step = 1
     scenario = session.data["author_envelope"].get("scenario") or "a case for this pack"
@@ -426,6 +435,7 @@ def _do_judge(turn, deps):
                 )
             ],
             done=True,
+            failed=True,
         )
 
     session.step = 2
@@ -483,6 +493,7 @@ def _do_unknown(turn, deps):
         return FlowResult(
             replies=[reply(blocks.error_blocks("The evaluation refused", ran.message()))],
             done=True,
+            failed=True,
         )
 
     body = blocks.disposition_blocks(
