@@ -93,6 +93,14 @@ jobs:
             || { echo "::error::prompts/author_pack-prompt.txt has drifted from the pinned runtime's author_pack prompt; re-paste it"; exit 1; }
           rm -f prompts-response.jsonl author_pack-from-runtime.txt
 
+      - name: Slack app unit suite
+        # The release pipeline's feedback job runs this too — but drift is what
+        # gates PRs, and a slack/-touching change once merged green here while
+        # broken there. The suite costs half a second; the gap cost a release.
+        run: |
+          python3 -m pip install --quiet 'pytest==8.3.4' 'pyyaml==6.0.2'
+          python3 -m pytest slack/ -q
+
       - name: Match the container user to this runner
         run: |
           echo "HOST_UID=$(id -u)" >> "$GITHUB_ENV"

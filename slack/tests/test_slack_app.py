@@ -555,7 +555,13 @@ def test_wire_slack_skips_at_the_job_level_and_has_no_environment():
     workflow = yaml.safe_load(read(WORKFLOW))
     job = workflow["jobs"]["wire-slack"]
     assert "environment" not in job, "an environment here is a second approval click"
-    assert job["if"].strip() == "${{ vars.SLACK_APP_ID != '' }}"
+    assert job["if"].strip() == "${{ needs.deploy.outputs.wire_slack == 'true' }}"
+    # The condition cannot read secrets directly (GitHub rejects the context
+    # in a job-level if — learned by dispatch); the deploy job exports the
+    # presence as a boolean output, and that step must exist.
+    deploy = workflow["jobs"]["deploy"]
+    assert deploy["outputs"]["wire_slack"] == "${{ steps.wire-flag.outputs.wire }}"
+    assert any(s.get("id") == "wire-flag" for s in deploy["steps"])
 
 
 def test_every_third_party_action_is_pinned_by_sha():
