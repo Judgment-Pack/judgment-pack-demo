@@ -69,6 +69,10 @@ else
          die "set BILLING_ACCOUNT=<one of the names above> and re-run" ;;
     esac
   fi
+  # `accounts list` reports the resource name (billingAccounts/0X0X0X-…) while
+  # --billing-account documents the bare id, so accept either spelling from
+  # BILLING_ACCOUNT and pass the form the flag asks for.
+  account="${account#billingAccounts/}"
   gcloud billing projects link "${PROJECT_ID}" --billing-account="${account}" --quiet >/dev/null
   echo "  linked to ${account}"
 fi
