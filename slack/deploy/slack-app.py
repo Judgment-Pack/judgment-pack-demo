@@ -14,11 +14,14 @@ same URLs, and puts it back — what a redeploy to a new URL needs. `rotate`
 trades a refresh token for a fresh pair and writes both down, which is the
 only safe way to use one unattended.
 
-ORDERING MATTERS, and it is not a preference: the moment either mutating call
-lands, Slack fires a `url_verification` challenge at the Event Subscriptions
-URL and refuses the manifest if nothing answers correctly. So the service must
-be live and healthy FIRST. The release workflow runs this after the candidate
-revision has been smoke-tested and promoted, for exactly that reason.
+ORDERING MATTERS, and it is not a preference: Slack accepts the manifest
+without probing the URL (observed 2026-08-03 — a successful `update` produced
+zero requests to the endpoint), but it holds EVENT DELIVERY until the URL is
+verified, and the one verification path that exists — the Retry button on the
+Event Subscriptions page — only succeeds against a live, healthy service. So
+the service must be up FIRST. The release workflow runs this after the
+candidate revision has been smoke-tested and promoted, for exactly that
+reason.
 
 Secrets, and where they are allowed to go:
 
@@ -481,11 +484,16 @@ def cmd_update_url(args, opener=None, log=print):
         log(json.dumps(payload, indent=2, sort_keys=True))
         return 0
 
-    session.call("apps.manifest.update", payload)
+    body = session.call("apps.manifest.update", payload)
     log("updated app {}".format(args.app))
-    log("Slack verified the Event Subscriptions URL as part of that call: it fires a "
-        "url_verification challenge and refuses the manifest if the answer is wrong. "
-        "A successful update IS the proof that the endpoint answered.")
+    for warning in body.get("warnings") or []:
+        log("Slack warning: {}".format(json.dumps(warning)))
+    log("The manifest API SETS the request URL without firing a url_verification "
+        "challenge (observed 2026-08-03: a successful update produced zero requests "
+        "to the endpoint), and Slack holds event delivery until the URL is verified "
+        "once. If events do not arrive, open api.slack.com/apps -> Event "
+        "Subscriptions and click Retry next to the URL -- the running service "
+        "answers the challenge, and delivery starts.")
     return 0
 
 
