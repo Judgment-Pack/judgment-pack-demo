@@ -188,8 +188,8 @@ jobs:
               --evidence requests/desk-evidence-screening.json >/tmp/forged.out 2>&1; then
               echo "::error::a drifted declared pack evaluated; the lock did not refuse"; exit 1
             fi
-            grep -q "JPS-LOCK-VERIFY" /tmp/forged.out \
-              || { echo "::error::the refusal did not carry JPS-LOCK-VERIFY"; cat /tmp/forged.out; exit 1; }
+            grep -q "document-drift" /tmp/forged.out \
+              || { echo "::error::the refusal did not name document-drift"; cat /tmp/forged.out; exit 1; }
 
             # Layer 2 — the lock is evidence, not a wall: the forger re-locks
             # (the documented limit) and the forged copy now answers clear.
