@@ -244,7 +244,7 @@ jobs:
           # degraded — the endpoint reports which, and a release that ships a
           # service which cannot reach its own session store is a release that
           # forgets everybody's progress.
-          health="$(curl -fsS --max-time 60 "${CANDIDATE}/healthz")"
+          health="$(curl -fsS --max-time 60 "${CANDIDATE}/health")"
           echo "${health}"
           case "${health}" in
             *DEGRADED*) echo "::error::state backend degraded on the candidate"; exit 1 ;;

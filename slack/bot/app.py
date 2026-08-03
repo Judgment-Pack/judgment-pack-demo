@@ -402,7 +402,7 @@ def wsgi_app(environ, start_response):
     path = environ.get("PATH_INFO", "/")
     if path == EVENTS_PATH:
         return SLACK_HANDLER(environ, start_response)
-    if path in ("/", "/healthz"):
+    if path in ("/", "/health", "/healthz"):
         # Reports the state backend too: a service that is up but has lost its
         # durable store is a different thing from a healthy one, and an
         # operator should not have to read the logs to find out.
