@@ -222,6 +222,110 @@ def test_leaving_a_flow_credits_nothing_and_resets_the_step():
     assert state.completed == set()
 
 
+def test_leaving_keeps_the_place_and_the_flows_own_button_resumes_it():
+    state = session()
+    deps = fakes.deps()
+    flows.start(Turn(user_id="U1", session=state), deps, "judge")
+    flows.dispatch(Turn(user_id="U1", session=state, action="case"), deps)
+    assert state.step == 1 and deps.runtime.evaluations == 1
+    state.leave()
+    # The step button's path: resume, then dispatch — never back to the intro.
+    assert flows.resume(state, "judge")
+    assert state.active_flow == "judge"
+    assert state.step == 1
+    flows.dispatch(Turn(user_id="U1", session=state, action="case"), deps)
+    assert state.step == 2
+    assert deps.runtime.evaluations == 2  # case 1 was NOT re-run
+
+
+def test_resume_only_applies_to_the_flow_that_was_left():
+    state = session()
+    deps = fakes.deps()
+    flows.start(Turn(user_id="U1", session=state), deps, "judge")
+    flows.dispatch(Turn(user_id="U1", session=state, action="case"), deps)
+    state.leave()
+    assert not flows.resume(state, "book")
+    assert state.active_flow is None
+
+
+def test_starting_fresh_from_the_menu_clears_the_kept_place():
+    state = session()
+    deps = fakes.deps()
+    flows.start(Turn(user_id="U1", session=state), deps, "judge")
+    flows.dispatch(Turn(user_id="U1", session=state, action="case"), deps)
+    state.leave()
+    flows.start(Turn(user_id="U1", session=state), deps, "judge")
+    assert state.step == 0
+    assert not flows.resume(state, "judge")
+
+
+def test_a_question_after_the_pack_is_registered_is_answered_not_consumed(tmp_path):
+    import json
+
+    project = tmp_path / "session-U1"
+    (project / "packs").mkdir(parents=True)
+    (project / "jpack.json").write_text(json.dumps({"configVersion": "3", "packs": {}}))
+
+    class Runtime(fakes.FakeRuntime):
+        def ensure_project(self, state):
+            state.scratch_dir = str(project)
+            return state.scratch_dir
+
+    state = session()
+    deps = fakes.deps(runtime=Runtime())
+    flows.start(Turn(user_id="U1", session=state), deps, "author")
+    flows.dispatch(Turn(user_id="U1", session=state, action="canned"), deps)
+    assert state.step == 1
+    evaluations = deps.runtime.evaluations
+    replies = flows.dispatch(
+        Turn(user_id="U1", session=state, text="What does unresolved mean here?"), deps
+    )
+    # The exemption is the paste step's, not the flow's: past it, a question
+    # pauses the flow like anywhere else.
+    assert state.step == 1
+    assert deps.runtime.evaluations == evaluations
+    assert "paused" in text_of(replies)
+
+
+def test_the_guard_reply_carries_its_own_way_forward():
+    state = session()
+    deps = fakes.deps()
+    flows.start(Turn(user_id="U1", session=state), deps, "judge")
+    replies = flows.dispatch(
+        Turn(user_id="U1", session=state, text="What is a disposition?"), deps
+    )
+    body = text_of(replies)
+    assert flows.step_action("judge", "resume") in body
+    assert blocks.ACTION_MENU in body
+
+
+def test_the_turn_loop_can_see_what_the_flow_meant():
+    state = session()
+    deps = fakes.deps()
+    flows.start(Turn(user_id="U1", session=state), deps, "judge")
+    for _ in range(3):
+        flows.dispatch(Turn(user_id="U1", session=state, action="case"), deps)
+    assert state.data.get("funnel_outcome") == "finished"
+
+    from bot.runtime import RuntimeUnavailable
+
+    class DownRuntime(fakes.FakeRuntime):
+        def ensure_project(self, state):
+            raise RuntimeUnavailable("gone")
+
+    state = session()
+    deps = fakes.deps(runtime=DownRuntime())
+    flows.start(Turn(user_id="U1", session=state), deps, "judge")
+    flows.dispatch(Turn(user_id="U1", session=state, action="case"), deps)
+    assert state.data.get("funnel_outcome") == "flow-failed"
+
+    state = session()
+    deps = fakes.deps()
+    flows.start(Turn(user_id="U1", session=state), deps, "judge")
+    state.leave()
+    assert state.data.get("funnel_outcome") == "left"
+
+
 def test_question_detection_matches_how_people_type():
     assert flows.looks_like_question("can this read our policy?")
     assert flows.looks_like_question("What is a pack")

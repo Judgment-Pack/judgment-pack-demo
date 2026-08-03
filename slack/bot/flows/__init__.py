@@ -38,8 +38,10 @@ __all__ = [
     "step_button",
     "about",
     "dispatch",
+    "looks_like_question",
     "menu",
     "remaining",
+    "resume",
     "start",
     "welcome",
 ]
@@ -77,6 +79,7 @@ def welcome(session):
 
 def _finish(session, flow, replies):
     session.finish(flow.ID)
+    session.data["funnel_outcome"] = "finished"
     replies.append(
         reply(
             blocks.next_steps_blocks(CATALOGUE, session.completed, flow.TITLE),
@@ -112,6 +115,34 @@ def looks_like_question(text):
     return first in _QUESTION_OPENERS
 
 
+def resume(session, flow_id):
+    """Re-enter a flow the user left, at the step they left it.
+
+    `Session.leave` keeps the place; this is the other half. Returns False
+    when this flow is not the one that was left — the caller starts fresh.
+    """
+    if session.data.get("left_flow") != flow_id:
+        return False
+    session.active_flow = flow_id
+    try:
+        session.step = int(session.data.pop("left_step", 0) or 0)
+    except (TypeError, ValueError):
+        session.step = 0
+    session.data.pop("left_flow", None)
+    return True
+
+
+def _consumes_text(flow, session):
+    """Does this flow read free text AT THIS STEP?
+
+    A per-flow constant was the first version of this, and it exempted the
+    author flow's two later steps — which ignore text — from the question
+    guard. The exemption is a property of the step, so the flow module says.
+    """
+    predicate = getattr(flow, "consumes_text", None)
+    return bool(predicate(session)) if predicate else False
+
+
 def dispatch(turn, deps):
     """Route a button or a message into the active flow.
 
@@ -129,11 +160,11 @@ def dispatch(turn, deps):
         turn.text
         and not turn.action
         and looks_like_question(turn.text)
-        and not getattr(flow, "CONSUMES_TEXT", False)
+        and not _consumes_text(flow, session)
     ):
-        # A question is not a step. This flow ignores free text, so advancing
-        # on one would silently guess that asking was clicking — the exact
-        # move the product exists to refuse.
+        # A question is not a step. This flow ignores free text here, so
+        # advancing on one would silently guess that asking was clicking —
+        # the exact move the product exists to refuse.
         glue = deps.model.glue(
             turn.user_id,
             turn.text,
@@ -142,8 +173,18 @@ def dispatch(turn, deps):
         body = blocks.model_blocks(glue.text, deps.model.name, label="Host reply", note=glue.note)
         body.append(
             blocks.context(
-                "*{}* is paused exactly where you left it — the buttons above still "
-                "work, or type `menu` to leave it.".format(flow.TITLE)
+                "*{}* is paused exactly where you left it.".format(flow.TITLE)
+            )
+        )
+        # Every flow treats a step dispatch as "run the next beat", so one
+        # token resumes any of them — the answer must carry its own way
+        # forward, not point at buttons that are several messages up.
+        body.append(
+            blocks.actions(
+                [
+                    step_button(flow.ID, "resume", "Continue {} →".format(flow.TITLE)),
+                    blocks.button("Back to the menu", blocks.ACTION_MENU),
+                ]
             )
         )
         return [reply(body, text="Answered — your use case is paused")]
@@ -155,6 +196,7 @@ def _run(turn, deps, flow):
     replies = list(result.replies)
     if result.done and result.failed:
         turn.session.leave()
+        turn.session.data["funnel_outcome"] = "flow-failed"
         replies.append(
             reply(
                 [

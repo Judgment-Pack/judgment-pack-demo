@@ -23,9 +23,6 @@ from ..runtime import RuntimeUnavailable, diagnostics_summary
 from .base import FlowResult, continue_bar, flush, reply, step_button
 
 ID = "author"
-# The paste step reads free text as the policy, so the router's question
-# guard must stay out of this flow's way.
-CONSUMES_TEXT = True
 TITLE = "Author a policy live"
 SUMMARY = "English policy in, validated pack out, then it judges."
 # The project, plus the pack this flow registered into it. Both are
@@ -294,6 +291,12 @@ def _register(deps, session, project, decision_id, pack, body):
         return True
     body.extend(blocks.error_blocks("`jpack packs validate` refused the project", ran.message()))
     return False
+
+
+def consumes_text(session):
+    """Free text is the policy — but only at the paste step. The later steps
+    ignore it, and the router's question guard must cover them."""
+    return session.step == 0
 
 
 def handle(turn, deps):

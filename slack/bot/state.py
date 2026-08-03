@@ -119,6 +119,9 @@ class Session:
     def enter(self, flow_id):
         self.active_flow = flow_id
         self.step = 0
+        # A fresh start supersedes any kept place.
+        self.data.pop("left_flow", None)
+        self.data.pop("left_step", None)
 
     def finish(self, flow_id):
         self.completed.add(flow_id)
@@ -126,7 +129,18 @@ class Session:
         self.step = 0
 
     def leave(self):
-        """Abandon the active flow without crediting it."""
+        """Step out of the active flow without crediting it.
+
+        The place is KEPT (`left_flow`/`left_step` persist with the session),
+        so the flow's own buttons can resume exactly where the user stopped —
+        leaving to look at the menu must never cost them the two cases they
+        already ran. `funnel_outcome` is the telemetry stamp the turn loop
+        reads; a failed flow overwrites it after calling this.
+        """
+        if self.active_flow:
+            self.data["left_flow"] = self.active_flow
+            self.data["left_step"] = self.step
+            self.data.setdefault("funnel_outcome", "left")
         self.active_flow = None
         self.step = 0
 
