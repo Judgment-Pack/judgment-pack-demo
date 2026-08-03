@@ -105,16 +105,14 @@ def _dm_channel(client, user_id):
 class Delivery:
     """Where one turn's replies go, with one honest fallback.
 
-    The turn starts posting wherever it was invoked — in a channel the bot is
-    a member of, the whole use case runs there, visibly, which is the best
-    way to demo to an audience. But a slash command also arrives from
-    channels the bot was never invited to and from DMs between two other
-    people, where every post dies (`not_in_channel` / `channel_not_found`)
-    and the user sees nothing, twice. No prefix test can tell those apart
-    (every DM id starts with `D`, including a colleague's). So the first
-    refused post switches the rest of the turn to the user's DM, tells the
-    invoking surface once via the command's response_url when there is one,
-    and re-sends the reply that failed.
+    Most turns target the user's DM. Interactive payloads, though, carry the
+    channel of the message whose button was clicked, and nothing guarantees
+    the bot can post there (`not_in_channel` / `channel_not_found` — and no
+    prefix test identifies these up front, since every DM id starts with `D`,
+    a colleague's included). The first refused post switches the rest of the
+    turn to the user's DM, tells the invoking surface once via the command's
+    response_url when there is one, and re-sends the reply that failed. The
+    user never sees silence.
     """
 
     def __init__(self, client, user_id, channel, respond=None):
@@ -444,12 +442,26 @@ def on_command(ack, body, client, respond):
             return flows.start(Turn(user_id=user_id, session=session), deps, argument)
         return [flows.menu(session)]
 
-    # The turn runs where it was invoked — in a channel the bot is a member
-    # of, the whole use case runs there, visibly. Where the bot cannot post
-    # (a channel it was never invited to, a DM between two other people —
-    # both indistinguishable up front), Delivery moves the turn to the DM on
-    # the first refused post and leaves one ephemeral pointer via respond.
-    _run(_turn, client, user_id, channel or None, build, respond=respond)
+    # Every slash turn lives in the DM. Half of this demo is typed input —
+    # the pasted policy, questions, the menu keywords — and `message.im` is
+    # the only message event the app subscribes to, so a use case parked in
+    # a channel would be a conversation that cannot hear the user. When the
+    # command came from anywhere else, that surface gets one ephemeral
+    # pointer; posting the pointer needs no membership, the response_url
+    # carries it.
+    def deliver():
+        dm = _dm_channel(client, user_id)
+        if channel and channel != dm:
+            try:
+                respond(
+                    text="Answered in our DM — this demo runs on typed input too "
+                    "(policies, questions), so the conversation lives there."
+                )
+            except Exception:  # noqa: BLE001 - the pointer is a courtesy
+                log.warning("could not post the ephemeral pointer for /jpack")
+        _turn(client, user_id, dm, build)
+
+    _run(deliver)
 
 
 @app.action(blocks.ACTION_MENU)

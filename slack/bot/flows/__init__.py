@@ -94,6 +94,9 @@ def start(turn, deps, flow_id):
     flow = BY_ID.get(flow_id)
     if flow is None:
         return [menu(turn.session, intro="I do not know that use case.")]
+    if turn.session.active_flow and turn.session.active_flow != flow_id:
+        # Switching keeps the abandoned flow's place, same as resuming does.
+        turn.session.leave()
     turn.session.enter(flow_id)
     first = Turn(user_id=turn.user_id, session=turn.session, action="start", text=turn.text)
     return _run(first, deps, flow)
@@ -119,16 +122,19 @@ def resume(session, flow_id):
     """Re-enter a flow the user left, at the step they left it.
 
     `Session.leave` keeps the place; this is the other half. Returns False
-    when this flow is not the one that was left — the caller starts fresh.
+    when no place is kept for this flow — the caller starts it fresh. The
+    reconciler vets kept places when a session is restored, so a place that
+    survives to here is one this container can honor.
     """
-    if session.data.get("left_flow") != flow_id:
+    step = session.take_kept_place(flow_id)
+    if step is None:
         return False
+    if session.active_flow and session.active_flow != flow_id:
+        # Switching keeps the abandoned flow's place too — resuming B must
+        # not silently discard the position held in A.
+        session.leave()
     session.active_flow = flow_id
-    try:
-        session.step = int(session.data.pop("left_step", 0) or 0)
-    except (TypeError, ValueError):
-        session.step = 0
-    session.data.pop("left_flow", None)
+    session.step = step
     return True
 
 

@@ -259,6 +259,62 @@ def test_starting_fresh_from_the_menu_clears_the_kept_place():
     assert not flows.resume(state, "judge")
 
 
+def test_starting_another_flow_does_not_spend_a_kept_place():
+    state = session()
+    deps = fakes.deps()
+    flows.start(Turn(user_id="U1", session=state), deps, "judge")
+    flows.dispatch(Turn(user_id="U1", session=state, action="case"), deps)
+    state.leave()
+    flows.start(Turn(user_id="U1", session=state), deps, "book")
+    # The promise "your place is kept" survives a detour through another
+    # use case: one slot per flow, not one slot per session.
+    assert flows.resume(state, "judge")
+    assert state.step == 1
+
+
+def test_switching_flows_keeps_the_abandoned_flows_place():
+    state = session()
+    deps = fakes.deps()
+    flows.start(Turn(user_id="U1", session=state), deps, "judge")
+    flows.dispatch(Turn(user_id="U1", session=state, action="case"), deps)
+    flows.start(Turn(user_id="U1", session=state), deps, "book")
+    assert state.kept_places().get("judge") == 1
+
+
+def test_the_reconciler_drops_kept_places_whose_evidence_is_gone():
+    from bot.reconcile import Reconciler
+
+    state = session()
+    deps = fakes.deps()
+    # Left mid-attested (needs a desk) and mid-judge (needs only the project).
+    state.data["left_steps"] = {"attested": 1, "judge": 2}
+    state.restored = True
+    notice = Reconciler(deps.runtime, deps.desk).reconcile(state)
+    # The desk's signing key went with the old container: that place is
+    # dropped, and the notice says so. The project-only place is honored.
+    assert "attested" not in state.kept_places()
+    assert state.kept_places().get("judge") == 2
+    assert notice and "restarted" in notice
+    assert not flows.resume(state, "attested")
+    assert flows.resume(state, "judge")
+    assert state.step == 2
+
+
+def test_a_reconciler_reset_drops_that_flows_kept_place_too():
+    from bot.reconcile import Reconciler
+
+    state = session()
+    deps = fakes.deps()
+    state.active_flow = "attested"
+    state.step = 1
+    state.data["left_steps"] = {"attested": 1}
+    state.restored = True
+    Reconciler(deps.runtime, deps.desk).reconcile(state)
+    assert state.active_flow == "attested"
+    assert state.step == 0
+    assert not flows.resume(state, "attested")
+
+
 def test_a_question_after_the_pack_is_registered_is_answered_not_consumed(tmp_path):
     import json
 

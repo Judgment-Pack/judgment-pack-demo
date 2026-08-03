@@ -119,9 +119,9 @@ class Session:
     def enter(self, flow_id):
         self.active_flow = flow_id
         self.step = 0
-        # A fresh start supersedes any kept place.
-        self.data.pop("left_flow", None)
-        self.data.pop("left_step", None)
+        # A fresh start spends THIS flow's kept place; another flow's place
+        # is not this start's to spend.
+        self.drop_kept_place(flow_id)
 
     def finish(self, flow_id):
         self.completed.add(flow_id)
@@ -131,18 +131,40 @@ class Session:
     def leave(self):
         """Step out of the active flow without crediting it.
 
-        The place is KEPT (`left_flow`/`left_step` persist with the session),
-        so the flow's own buttons can resume exactly where the user stopped —
-        leaving to look at the menu must never cost them the two cases they
-        already ran. `funnel_outcome` is the telemetry stamp the turn loop
-        reads; a failed flow overwrites it after calling this.
+        The place is KEPT — one slot per flow, in `left_steps`, persisted
+        with the session — so the flow's own buttons can resume exactly
+        where the user stopped: leaving to look at the menu must never cost
+        them the two cases they already ran. `funnel_outcome` is the
+        telemetry stamp the turn loop reads; a failed flow overwrites it
+        after calling this.
         """
         if self.active_flow:
-            self.data["left_flow"] = self.active_flow
-            self.data["left_step"] = self.step
+            self.data.setdefault("left_steps", {})[self.active_flow] = self.step
             self.data.setdefault("funnel_outcome", "left")
         self.active_flow = None
         self.step = 0
+
+    def kept_places(self):
+        left = self.data.get("left_steps")
+        return left if isinstance(left, dict) else {}
+
+    def take_kept_place(self, flow_id):
+        """Spend the kept place for this flow: its step, or None."""
+        left = self.kept_places()
+        if flow_id not in left:
+            return None
+        try:
+            step = int(left.pop(flow_id) or 0)
+        except (TypeError, ValueError):
+            step = 0
+        if not left:
+            self.data.pop("left_steps", None)
+        return step
+
+    def drop_kept_place(self, flow_id):
+        left = self.kept_places()
+        if left.pop(flow_id, None) is not None and not left:
+            self.data.pop("left_steps", None)
 
 
 class TurnLock:

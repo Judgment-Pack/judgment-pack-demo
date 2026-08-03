@@ -99,7 +99,10 @@ class Reconciler:
 
         Called inside the turn lock, before the flow runs, and only does
         anything when the session came back from the backend into a process
-        that had never seen it.
+        that had never seen it. Kept places (flows the user LEFT, which
+        `flows.resume` re-enters mid-step from a later click) are vetted
+        here too — a place whose evidence went with the old container is
+        dropped now, so resume can never sneak past this module.
         """
         if not getattr(session, "restored", False):
             return None
@@ -111,10 +114,17 @@ class Reconciler:
 
         flow_id = session.active_flow
         if not flow_id:
-            # Between flows: nothing local is needed until the next one starts.
-            log.info("restored %s at the menu; nothing to rebuild", session.user_id)
-            return None
+            # Between flows: nothing ACTIVE to rebuild — but kept places can
+            # still point mid-flow, and they are honored or dropped now.
+            log.info("restored %s at the menu; vetting kept places", session.user_id)
+            return self._kept_notice(self._vet_kept_places(session))
+        notice = self._reconcile_active(session, flow_id)
+        dropped_notice = self._kept_notice(self._vet_kept_places(session))
+        if notice and dropped_notice:
+            return notice + "\n\n" + dropped_notice
+        return notice or dropped_notice
 
+    def _reconcile_active(self, session, flow_id):
         needs = self.needs(flow_id)
         rebuilt = []
 
@@ -143,6 +153,59 @@ class Reconciler:
         extra = " and re-registered the pack you authored" if "pack" in rebuilt else ""
         log.info("resumed %s in flow %s at step %s", session.user_id, flow_id, session.step)
         return REBUILT_NOTICE.format(extra=extra)
+
+    def _vet_kept_places(self, session):
+        """Honor or drop each kept place. Returns the flow ids dropped.
+
+        A place is safe to resume when everything its flow needs can exist in
+        this container: a project re-copies lazily on the flow's own
+        `ensure_project`, a drafted pack re-registers here and now, but a
+        desk's signing key and the decision book's file went with the old
+        container — those places are dropped, and the flow starts fresh when
+        the user comes back to it.
+        """
+        kept = session.kept_places()
+        dropped = []
+        for flow_id in list(kept):
+            try:
+                step = int(kept[flow_id] or 0)
+            except (TypeError, ValueError):
+                step = 0
+            if step < 1:
+                # A place at the intro holds nothing a fresh start would not.
+                session.drop_kept_place(flow_id)
+                continue
+            needs = self.needs(flow_id)
+            safe = not any(need in UNREBUILDABLE for need in needs)
+            if safe and "registered-pack" in needs:
+                safe = self._rebuild_project(session) and self._reregister_pack(session)
+            if not safe:
+                session.drop_kept_place(flow_id)
+                dropped.append(flow_id)
+                log.info(
+                    "dropped the kept place in %s for %s — its evidence went "
+                    "with the old container",
+                    flow_id,
+                    session.user_id,
+                )
+        return dropped
+
+    def _kept_notice(self, dropped):
+        if not dropped:
+            return None
+        titles = ", ".join(
+            "*{}*".format(getattr(self.catalogue().get(flow_id), "TITLE", flow_id))
+            for flow_id in dropped
+        )
+        return (
+            ":arrows_counterclockwise: *The service restarted since you were last "
+            "here,* and the place you had kept in {} went with the old container. "
+            "{} from the top when you come back — nothing you finished was "
+            "lost.".format(
+                titles,
+                "That use case starts" if len(dropped) == 1 else "Those use cases start",
+            )
+        )
 
     # --- the rebuildable half ---------------------------------------------
 
@@ -199,6 +262,9 @@ class Reconciler:
     def _reset(self, session, flow_id):
         session.step = 0
         session.active_flow = flow_id
+        # The reset must stick: a kept place for this flow would resume it
+        # right back into the state the reset just declared unresumable.
+        session.drop_kept_place(flow_id)
         for key in list(session.data):
             # The user's own policy text survives — the notice promises use
             # case 2 needs nothing else, and re-asking for it would be rude.
