@@ -16,7 +16,13 @@ Slack  ──HTTPS──▶  Cloud Run (one instance, 512Mi, CPU always allocate
                     ├── bot/runtime.py ──▶ jpack           (every disposition comes from here)
                     ├── bot/desk.py    ──▶ gateway + attest (one signing desk per session)
                     ├── bot/model.py   ──▶ Gemini          (narration and drafting ONLY)
-                    └── /tmp/session-<user>/   a copy of the baked enterprise-demo project
+                    ├── bot/store.py   ──▶ Firestore      (session METADATA only — progress
+                    │                                      survives a restart; nothing a flow
+                    │                                      executes on lives there)
+                    ├── bot/reconcile.py  rebuilds the local half of a restored session,
+                    │                     and says so plainly when it cannot
+                    └── /tmp/session-<user>/   a copy of the baked enterprise-demo project,
+                                               rebuilt by whichever container is running
 ```
 
 The image carries the demo engine, all of it pinned:
@@ -83,25 +89,103 @@ another flow switches into it, and a message with nothing running is glue plus t
 
 Every flow ends with the remaining use cases and About.
 
-## State, and its limitation
+## State: what is durable, what cannot be, and what happens in between
 
-`bot/state.py` holds sessions in one process's memory: the active flow, the step, the completed
-set, the scratch directory, the desk, and flow-local data. That is a real constraint, not an
-oversight:
+State is split in two, and the split is the whole design. `bot/store.py` holds the interface and
+both implementations; `bot/state.py` holds the live objects; `bot/reconcile.py` handles the seam.
 
-* **Cloud Run is deployed `--min-instances=1 --max-instances=1`.** One instance means one memory,
-  so a user's session, their scratch project and their gateway are always on the machine that
-  created them. A second instance would split them and produce confusing half-sessions.
-* **Restarts lose sessions.** A user who is mid-flow when a revision rolls sees the menu again.
-  Their scratch copy is gone with the container's `/tmp`; nothing else is lost, because nothing
-  else was ever stored.
-* **Firestore is the named upgrade path, and it is not built.** Sessions are a small dataclass
-  with a completed set and a directory path; moving them to a document store is a contained
-  change, and `SessionStore` is the only thing that would need to change.
+### What persists
 
-Session hygiene is enforced: sessions expire two hours after their last message (deleting the
-scratch copy and reaping the gateway process), and the table is capped — the least recently seen
-session is evicted when a new one would exceed the cap.
+One document per Slack user (Firestore collection `slack-demo-sessions`, or a dict entry with the
+memory backend). It is *metadata about where somebody is in the demo* — nothing a flow executes on:
+
+| persisted | why it can be |
+|---|---|
+| `user_id`, `created_at`, `last_seen` | plain scalars; the identity of the session |
+| `active_flow`, `step` | where they are; a number and a name |
+| `completed[]` | which use cases they finished — the menu they see |
+| `welcomed` | so a restart does not greet somebody twice |
+| `scratch_dir` | a **path hint**: where their project *was*. Never proof it still exists |
+| `data` (JSON-safe subset) | the drafted pack document, the decision id, the policy text, flow-local scalars |
+| `expires_at` (+ `expires_at_epoch`) | a real timestamp, so a Firestore TTL policy can do the deleting |
+| `lease_holder`, `lease_expires_at` | the multi-instance seam, below |
+
+| NOT persisted, ever | why it cannot be |
+|---|---|
+| `threading.Lock` | a lock means something to one process and nothing to another |
+| the live `Desk` | a `Popen`, a port, an Ed25519 keypair on this container's disk |
+| any file handle or subprocess | the same, one level down |
+| the scratch project itself | a directory of files that `jpack` reads off *this* disk |
+| the audit trail | a file inside that directory |
+
+`json_safe_data()` enforces the `data` rule by construction: a value that will not round-trip
+through JSON, or is larger than 200 KB, is dropped rather than mangled — and `desk` is excluded by
+name, because a stale handle read back after a restart would be a claim about a gateway that is
+not running.
+
+### What that buys, exactly
+
+**A user's progress survives a restart, a redeploy, or this instance being replaced.** Somebody
+three use cases in does not come back to an empty menu because a revision rolled.
+
+**It does not make the demo multi-instance.** Two things every flow needs are local to a container
+by nature: the scratch copy of the project that `jpack` subprocesses read off this disk, and the
+live gateway process with its keypair and its store. `--min-instances=1 --max-instances=1` stays,
+and durable state is not an argument for changing it.
+
+### Reconciliation, which is the load-bearing part
+
+When a turn arrives for a session this process has never run, `bot/reconcile.py` asks one question
+per capability the active flow declares in its `NEEDS`: can this container rebuild it?
+
+| capability | flow | rebuildable? |
+|---|---|---|
+| `project` | all four | **yes** — `ensure_project` re-copies the baked demo project |
+| `registered-pack` | 2 | **yes** — the drafted pack persisted with the session, so it is re-registered from the *same bytes* (and `packs lock` re-declares the amendment) |
+| `desk` | 3 | **no** — a signing key minted in a container that is gone cannot be re-created, and neither can the receipts it signed. That is what a receipt *is* |
+| `audit-trail` | 4 | **no** — the decision book was a file in the scratch copy |
+
+Rebuildable things are rebuilt silently; it is the same demo. Unrebuildable ones are **not
+pretended**: that flow resets to its first step, the user gets one plain line saying the service
+restarted and this use case begins again, and their `completed` set is untouched. Resuming use
+case 3 into a desk with no receipts, or use case 4 into a book with no decisions, while the prose
+claimed otherwise, is the one failure this demo cannot afford.
+
+### The multi-instance seam
+
+Every persisted document carries `lease_holder` and `lease_expires_at`, and `FirestoreStore` can
+take one in a transaction (`try_lease`). **Nothing in the request path depends on it today** — the
+single instance is serialized by the per-session `threading.Lock` — and it is a seam, not a
+guarantee. A real multi-instance version needs, additionally:
+
+1. the scratch project on shared storage or rebuilt per request (and the audit trail with it), and
+2. the screening desk as a *service* rather than a child process — which is the decision-desk
+   direction: evaluation and attestation behind an addressable endpoint, so any instance can reach
+   the same desk instead of owning one.
+
+Until both exist, a second instance would hand users half a session, and this app says so rather
+than shipping a lease that looks like a solution.
+
+### Failure posture
+
+* **Firestore configured but unreachable at boot → refuse to start**, loudly, exactly like a
+  missing signing secret. A demo told to remember that silently forgets is worse than one that
+  will not start and says why.
+* **Unreachable mid-run → log loudly and degrade to this process's memory for that turn.** The
+  user's click is answered; the log says durability is suspended. Dropping the turn would teach
+  them nothing, and a restart during a degraded window loses that session — which is the memory
+  backend's normal behavior, not a new failure.
+
+### Hygiene and cost
+
+Sessions expire two hours after their last message: the sweeper thread deletes the scratch copy
+and reaps the gateway process, and the Firestore TTL policy on `expires_at` deletes the document
+(a policy cannot kill a process, which is why both exist). The table is still capped — the least
+recently seen session is evicted when a new one would exceed the cap.
+
+Cost: a session document is a few kilobytes and a turn is a handful of reads and writes. A demo
+workspace lives inside Firestore's free tier (50k reads / 20k writes per day) without trying;
+the always-allocated Cloud Run instance remains the only real line item.
 
 ## Security and operational choices, with reasons
 
@@ -138,8 +222,21 @@ session is evicted when a new one would exceed the cap.
   process cannot read `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET` or `GEMINI_API_KEY`; a hostile
   narration cannot emit a link or a broadcast; a desk that never answers is killed rather than
   leaked; the decision book's caption matches the record shape it prints; and the disposition is
-  posted before the model is called. No test imports `slack_bolt` or `google-genai`: every module
-  except `bot/app.py` is free of both, deliberately.
+  posted before the model is called.
+
+  For state: the same assertions run against **both backends** (parity, so the memory one cannot
+  drift), the live desk and anything unserializable never reach a persisted document, an
+  unreachable Firestore refuses to boot and a mid-run failure degrades instead of dropping a turn,
+  and there is one restart test per use case — mid-1 and mid-2 resume with the project (and the
+  pack) rebuilt, mid-3 and mid-4 start that use case again with the completed set intact.
+  `tests/fake_firestore.py` is an in-memory stand-in for the slice of the client this app uses, so
+  none of that needs a network or a credential; it proves the logic, not the service's atomicity,
+  and says so in its own docstring.
+
+  No test imports `slack_bolt`, `google-genai` or `google-cloud-firestore`: every module except
+  `bot/app.py` is free of the first two, and the third is imported only when
+  `STATE_BACKEND=firestore` builds a real client — which is why the default backend keeps the dry
+  run and the suite dependency-free.
 * `python3 slack/bot/dryrun.py --script` — the headless proof. It drives the scripted
   1 → 3 → 4 → 2 path with a canned model, running the real `jpack` and the real gateway, and
   asserts the beats: approve, reject, unresolved with both reasons, an acquired receipt, a
@@ -169,7 +266,14 @@ Stated so nobody has to guess whether they were forgotten:
 * **No multi-workspace OAuth distribution.** Single-workspace install, one bot token. Distribution
   needs an installation store, per-team authorization, and a public-app review; none of that is
   built.
-* **No Firestore, no database of any kind.** In-memory sessions, one instance, documented above.
+* **No multi-instance service.** Session metadata is durable, and that is where the durability
+  stops: the scratch project and the signing desk are local to a container by nature, so
+  `--min-instances=1 --max-instances=1` stays. The lease field is a seam for the version that
+  solves both; it is not that version.
+* **Nothing a flow executes on is in the database.** No pack documents as records, no audit trail
+  as rows, no evidence in Firestore. Packs are files, the trail is a file the runtime appends to,
+  and both stay that way — a decision you cannot read as bytes on a disk is a decision somebody
+  has to take on trust.
 * **No public hosting of packs or payloads.** Everything the app produces goes into the Slack
   conversation itself; when a document outgrows a message it is truncated with a visible marker
   rather than uploaded. If files become necessary (a whole pack as an attachment, an audit trail

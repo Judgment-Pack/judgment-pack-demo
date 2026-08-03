@@ -78,6 +78,20 @@ class Config:
     demo_project: str = "/opt/judgment-pack/enterprise-demo"
     gateway_authority: str = "gateway:judgment-pack-slack"
 
+    # --- Where session metadata lives -------------------------------------
+    # "memory" (default) forgets everything when this process ends. "firestore"
+    # makes a user's PROGRESS durable across restarts; it does not make the
+    # demo multi-instance, because the scratch project and the live desk are
+    # inherently local (see bot/store.py and slack/DESIGN.md).
+    state_backend: str = "memory"
+    firestore_collection: str = "slack-demo-sessions"
+    firestore_project: Optional[str] = None
+    firestore_database: Optional[str] = None
+    # How long a turn lease is claimed for. A seam for a multi-instance
+    # version; the single instance is serialized by a threading.Lock.
+    lease_seconds: int = 120
+    dedupe_ttl_seconds: int = 900
+
     # --- Session hygiene --------------------------------------------------
     session_root: str = "/tmp"
     session_ttl_seconds: int = 2 * 60 * 60
@@ -123,6 +137,12 @@ class Config:
             ),
             demo_project=get("DEMO_PROJECT", "/opt/judgment-pack/enterprise-demo"),
             gateway_authority=get("GATEWAY_AUTHORITY", "gateway:judgment-pack-slack"),
+            state_backend=get("STATE_BACKEND", "memory"),
+            firestore_collection=get("FIRESTORE_COLLECTION", "slack-demo-sessions"),
+            firestore_project=env.get("FIRESTORE_PROJECT") or env.get("GOOGLE_CLOUD_PROJECT") or None,
+            firestore_database=env.get("FIRESTORE_DATABASE") or None,
+            lease_seconds=_int_env(env, "LEASE_SECONDS", 120),
+            dedupe_ttl_seconds=_int_env(env, "DEDUPE_TTL_SECONDS", 900),
             session_root=get("SESSION_ROOT", "/tmp"),
             session_ttl_seconds=_int_env(env, "SESSION_TTL_SECONDS", 2 * 60 * 60),
             max_sessions=_int_env(env, "MAX_SESSIONS", 24),
@@ -190,6 +210,8 @@ class Config:
             "gateway_bin": self.gateway_bin,
             "demo_project": self.demo_project,
             "session_root": self.session_root,
+            "state_backend": self.state_backend,
+            "firestore_collection": self.firestore_collection,
             "model_calls_per_hour": self.model_calls_per_hour,
             "turns_per_hour": self.turns_per_hour,
             "max_concurrent_work": self.max_concurrent_work,

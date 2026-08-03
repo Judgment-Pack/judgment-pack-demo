@@ -1,13 +1,17 @@
-"""Per-user session state, event de-duplication, and the rate limits.
+"""Live session objects, the turn lock, and the table that holds them.
 
-STATE LIMITATION (deliberate, documented in slack/DESIGN.md): everything here
-lives in one process's memory. The deploy script pins the Cloud Run service to
-min-instances=1 and max-instances=1 so a user's session, their scratch copy of
-the demo project, and their screening desk all stay on the machine that
-created them. Firestore is the named upgrade path when this outgrows one
-instance; it is not built.
+State is now split in two, and the split is documented in full at the top of
+`bot/store.py`:
 
-Two concurrency facts drive the shapes here:
+* the PERSISTED document — where a user is in the demo — lives behind a
+  `StateStore` (memory by default, Firestore when configured), so progress
+  survives a restart;
+* the PROCESS-LOCAL parts — the threading.Lock that serializes a user's
+  turns, and the live Desk with its Popen and its keypair — live in this
+  module's side table and die with the process, because they cannot mean
+  anything anywhere else.
+
+What is still true, and load-bearing:
 
 * Slack's interactive payloads carry no event id, so de-duplication cannot
   cover a double-click. What covers it is the per-session TURN LOCK: one turn
@@ -15,6 +19,10 @@ Two concurrency facts drive the shapes here:
 * Reaping a session terminates a process and deletes a directory. That must
   never happen while the table lock is held, or one slow reap stalls every
   other user's turn.
+
+Durability does not make this multi-instance: `bot/reconcile.py` rebuilds what
+a new container can rebuild and says so plainly when something cannot be
+rebuilt.
 """
 
 from __future__ import annotations
@@ -24,16 +32,48 @@ import os
 import shutil
 import threading
 import time
-from collections import OrderedDict
+import uuid
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Set
 
+# Re-exported under their old names so importers that predate the split keep
+# working: with no backend configured these ARE the implementations.
+from .store import MemoryDedupe as EventDedupe  # noqa: F401
+from .store import MemoryRateLimiter as RateLimiter  # noqa: F401
+from .store import MemoryStore  # noqa: F401
+from .store import RateLimited  # noqa: F401
+from .store import StateUnavailable, apply_document, build_backend, to_document
+
 log = logging.getLogger("jpack-slack.state")
+
+__all__ = [
+    "EventDedupe",
+    "MemoryStore",
+    "RateLimited",
+    "RateLimiter",
+    "Session",
+    "SessionStore",
+    "StateUnavailable",
+    "TurnLock",
+    "apply_document",
+    "build_backend",
+    "remove_scratch",
+    "to_document",
+]
+
+# Who this process is, for the lease field on a persisted document. A seam
+# for a multi-instance version; nothing in the request path depends on it.
+HOLDER = "{}-{}".format(os.environ.get("K_REVISION", "local"), uuid.uuid4().hex[:8])
 
 
 @dataclass
 class Session:
-    """One Slack user's run through the demo."""
+    """One Slack user's run through the demo, as this process sees it.
+
+    The first eight members are persisted; `data` is persisted in its
+    JSON-safe part only; `lock`, `desk` (inside `data`) and `restored` are
+    this process's alone.
+    """
 
     user_id: str
     created_at: float
@@ -43,12 +83,17 @@ class Session:
     step: int = 0
     completed: Set[str] = field(default_factory=set)
     welcomed: bool = False
-    # Flow-local scratch data (a draft pack, a desk handle, the newest run id).
+    # Flow-local scratch data. The JSON-safe part persists (a draft pack, the
+    # newest run id, scalars); the live Desk under "desk" never does.
     data: Dict[str, Any] = field(default_factory=dict)
     # Held for the whole of one turn: a click, a slash command, or a message.
     # Everything a turn touches — this object, the scratch project on disk,
     # the session's gateway — is single-writer only because of this lock.
     lock: Any = field(default_factory=threading.Lock, repr=False, compare=False)
+    # True when this object was rebuilt from a persisted document by a process
+    # that had never seen this user before — i.e. after a restart. The
+    # reconciler clears it once it has rebuilt what it can.
+    restored: bool = field(default=False, repr=False, compare=False)
 
     def touch(self, now=None):
         self.last_seen = time.time() if now is None else now
@@ -92,21 +137,67 @@ class TurnLock:
 
 
 class SessionStore:
-    """Thread-safe session table with a TTL and a hard cap.
+    """The table of live sessions, backed by a StateStore.
 
-    Scratch directories are real copies of the demo project, so expiry deletes
-    bytes: sessions older than the TTL are removed, and when the table is full
-    the least recently seen session is evicted. Both the process kill and the
-    delete happen OUTSIDE the table lock.
+    Semantics are exactly what they were when this was a plain dict: a TTL, a
+    hard cap on how many sessions exist at once, eviction of the least
+    recently seen, and reaping (kill the desk, delete the scratch copy) that
+    happens OUTSIDE the table lock.
+
+    What changed is where the metadata lives. With the memory backend this is
+    the same object graph as before. With Firestore, a process that has never
+    seen a user still finds their progress — and marks the session `restored`
+    so the reconciler knows to rebuild the local half.
     """
 
-    def __init__(self, config, on_evict=None):
+    def __init__(self, config, on_evict=None, backend=None):
         self._config = config
-        self._sessions = OrderedDict()  # user_id -> Session, LRU order
+        self._backend = backend or build_backend(config, verify=False)
+        self._store = self._backend.store
+        self._local = {}  # user_id -> Session (locks, desks: this process only)
         self._lock = threading.RLock()
         self._on_evict = on_evict
         self._sweeper = None
         self._stop = threading.Event()
+        self._degraded = False
+
+    # --- backend calls, which must never drop a turn ----------------------
+
+    def _durable(self, call, *args, **kwargs):
+        """Talk to the backend; on failure log loudly and carry on locally.
+
+        Boot already proved the backend reachable (`build_backend` refuses to
+        start otherwise). If it goes away mid-run, the honest trade is to
+        keep answering the user out of this process's memory and say so in
+        the log — a dropped click teaches them nothing.
+        """
+        try:
+            result = call(*args, **kwargs)
+            if self._degraded:
+                log.warning("state backend is answering again")
+                self._degraded = False
+            return result
+        except StateUnavailable as error:
+            if not self._degraded:
+                log.error(
+                    "state backend unavailable — degrading to this process's memory "
+                    "for now; sessions will not survive a restart while this lasts: %s",
+                    error,
+                )
+                self._degraded = True
+            return None
+        except Exception as error:  # noqa: BLE001 - same posture for a surprise
+            log.error("state backend raised %s; degrading to memory", type(error).__name__)
+            self._degraded = True
+            return None
+
+    @property
+    def backend_name(self):
+        return self._backend.name
+
+    @property
+    def degraded(self):
+        return self._degraded
 
     # --- lookup -----------------------------------------------------------
 
@@ -115,31 +206,81 @@ class SessionStore:
         evicted = []
         with self._lock:
             evicted.extend(self._expired(now))
-            session = self._sessions.get(user_id)
+            session = self._local.get(user_id)
             if session is None:
-                if not create:
+                document = self._durable(self._store.load, user_id)
+                if document:
+                    session = Session(
+                        user_id=user_id, created_at=now, last_seen=now, restored=True
+                    )
+                    apply_document(session, document)
+                    self._local[user_id] = session
+                    log.info(
+                        "restored session for %s from %s (flow %s, step %s, completed %s)",
+                        user_id,
+                        self._backend.name,
+                        session.active_flow,
+                        session.step,
+                        sorted(session.completed),
+                    )
+                elif create:
+                    session = Session(user_id=user_id, created_at=now, last_seen=now)
+                    self._local[user_id] = session
+                else:
                     self._release_many(evicted)
                     return None
-                session = Session(user_id=user_id, created_at=now, last_seen=now)
-                self._sessions[user_id] = session
-                evicted.extend(self._overflow())
+                session.touch(now)
+                # Written before the cap is enforced: the cap counts documents,
+                # and a session the backend has not heard of yet would let the
+                # table grow by one every time.
+                self.save(session)
+                evicted.extend(self._overflow(now))
             session.touch(now)
-            self._sessions.move_to_end(user_id)
+        self.save(session)
         self._release_many(evicted)
         return session
 
+    def save(self, session):
+        """Persist the metadata half of a session. Cheap, and called often."""
+        document = to_document(
+            session,
+            self._config.session_ttl_seconds,
+            holder=HOLDER,
+            lease_seconds=self._config.lease_seconds,
+        )
+        self._durable(self._store.save, document)
+        return document
+
     def _expired(self, now):
+        """Sessions past the TTL, dropped from both halves."""
         gone = []
-        for user_id, session in list(self._sessions.items()):
+        documents = self._durable(self._store.expired, now) or []
+        for document in documents:
+            user_id = document.get("user_id")
+            if not user_id:
+                continue
+            session = self._local.pop(user_id, None) or _shell(document)
+            self._durable(self._store.delete, user_id)
+            gone.append(session)
+        # A local session whose backend document vanished (a TTL policy got
+        # there first) still owns a desk and a directory here.
+        for user_id, session in list(self._local.items()):
             if now - session.last_seen > self._config.session_ttl_seconds:
-                self._sessions.pop(user_id, None)
-                gone.append(session)
+                self._local.pop(user_id, None)
+                self._durable(self._store.delete, user_id)
+                if session not in gone:
+                    gone.append(session)
         return gone
 
-    def _overflow(self):
+    def _overflow(self, now):
         gone = []
-        while len(self._sessions) > self._config.max_sessions:
-            _, session = self._sessions.popitem(last=False)
+        cap = self._config.max_sessions
+        for document in self._durable(self._store.overflow, cap) or []:
+            user_id = document.get("user_id")
+            if not user_id:
+                continue
+            session = self._local.pop(user_id, None) or _shell(document)
+            self._durable(self._store.delete, user_id)
             gone.append(session)
         return gone
 
@@ -158,7 +299,9 @@ class SessionStore:
 
         Without this, a quiet workspace keeps every session's gateway process
         alive indefinitely — the TTL would be honored only by traffic that may
-        never come.
+        never come. (A Firestore TTL policy deletes the DOCUMENTS on its own
+        schedule; this thread is what kills the processes and the directories,
+        which no policy can reach.)
         """
         if self._sweeper is not None:
             return self._sweeper
@@ -181,14 +324,15 @@ class SessionStore:
 
     def drop(self, user_id):
         with self._lock:
-            session = self._sessions.pop(user_id, None)
+            session = self._local.pop(user_id, None)
+            self._durable(self._store.delete, user_id)
         if session is not None:
             self._release_many([session])
         return session
 
     def all(self):
         with self._lock:
-            return list(self._sessions.values())
+            return list(self._local.values())
 
     def _release_many(self, sessions):
         # Called with NO lock held: on_evict kills a process and waits for it,
@@ -202,6 +346,21 @@ class SessionStore:
             remove_scratch(session)
 
 
+def _shell(document):
+    """A session object for a document this process has never held.
+
+    Used only for reaping: it carries the scratch_dir hint so the sweeper can
+    delete a directory a previous life left behind.
+    """
+    session = Session(
+        user_id=document.get("user_id", "?"),
+        created_at=float(document.get("created_at") or 0),
+        last_seen=float(document.get("last_seen") or 0),
+    )
+    apply_document(session, document)
+    return session
+
+
 def remove_scratch(session):
     """Delete a session's scratch copy of the demo project, if it has one."""
     path = session.scratch_dir
@@ -211,93 +370,3 @@ def remove_scratch(session):
     if not os.path.isdir(path):
         return
     shutil.rmtree(path, ignore_errors=True)
-
-
-class EventDedupe:
-    """Idempotence for Slack's at-least-once EVENT delivery.
-
-    Slack retries an event when it does not see a 200 in three seconds and
-    marks the retry with X-Slack-Retry-Num. Acting twice on one event would
-    run two evaluations and post two narrations, so every event entry point
-    checks the event id here first.
-
-    It covers events and nothing else: interactive payloads carry no event id,
-    so a double-click is a second genuine turn. The turn lock, not this, is
-    what makes that safe.
-    """
-
-    def __init__(self, capacity=512):
-        self._capacity = capacity
-        self._seen = OrderedDict()
-        self._lock = threading.Lock()
-
-    def seen(self, event_id):
-        """True when this event id was already handled (and records it)."""
-        if not event_id:
-            return False
-        with self._lock:
-            if event_id in self._seen:
-                self._seen.move_to_end(event_id)
-                return True
-            self._seen[event_id] = time.time()
-            while len(self._seen) > self._capacity:
-                self._seen.popitem(last=False)
-            return False
-
-    def __len__(self):
-        with self._lock:
-            return len(self._seen)
-
-
-class RateLimited(Exception):
-    """Raised when a user has spent a budget."""
-
-    def __init__(self, retry_after_seconds):
-        super().__init__("budget spent")
-        self.retry_after_seconds = retry_after_seconds
-
-
-class RateLimiter:
-    """Per-user token bucket.
-
-    Two of these exist: a small one over model calls (narration and drafting
-    are the only work a vendor bills for) and a generous one over turns that
-    start subprocesses — one instance with one CPU can be flooded by free work
-    just as easily as by paid work.
-    """
-
-    def __init__(self, capacity=20, per_seconds=3600.0):
-        self._capacity = float(capacity)
-        self._rate = float(capacity) / float(per_seconds) if per_seconds else 0.0
-        self._buckets = {}  # user_id -> (tokens, updated_at)
-        self._lock = threading.Lock()
-
-    def _refill(self, user_id, now):
-        tokens, updated = self._buckets.get(user_id, (self._capacity, now))
-        tokens = min(self._capacity, tokens + (now - updated) * self._rate)
-        return tokens
-
-    def allow(self, user_id, now=None):
-        """Spend one token. True when the call may proceed."""
-        now = time.time() if now is None else now
-        with self._lock:
-            tokens = self._refill(user_id, now)
-            if tokens < 1.0:
-                self._buckets[user_id] = (tokens, now)
-                return False
-            self._buckets[user_id] = (tokens - 1.0, now)
-            return True
-
-    def retry_after(self, user_id, now=None):
-        """Seconds until one more token exists, rounded up."""
-        now = time.time() if now is None else now
-        with self._lock:
-            tokens = self._refill(user_id, now)
-        if tokens >= 1.0 or self._rate <= 0:
-            return 0
-        return int((1.0 - tokens) / self._rate) + 1
-
-    def tokens(self, user_id, now=None):
-        now = time.time() if now is None else now
-        with self._lock:
-            return self._refill(user_id, now)

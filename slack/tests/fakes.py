@@ -89,9 +89,12 @@ def ok(payload):
 
 
 class FakeRuntime:
-    def __init__(self, payloads=None, records=None):
+    def __init__(self, payloads=None, records=None, locked=True):
         self.calls = []
         self.evaluations = 0
+        # The demo project ships a reviewed-set lock, so registering a pack is
+        # an amendment that has to be declared. Fake both halves.
+        self.locked = locked
         self.payloads = list(payloads or [APPROVE, APPROVE, UNRESOLVED])
         self.records = list(records if records is not None else [RECORD])
 
@@ -120,6 +123,13 @@ class FakeRuntime:
     def packs_validate(self, project):
         self.calls.append(("packs-validate",))
         return ok({"status": "valid", "summary": {"total": 5, "passed": 5, "failed": 0}})
+
+    def has_lock(self, project):
+        return self.locked
+
+    def packs_lock(self, project):
+        self.calls.append(("packs-lock",))
+        return ok({"status": "valid", "command": "packs lock"})
 
     def packs_list(self, project):
         return ok(

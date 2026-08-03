@@ -231,6 +231,24 @@ class JpackRuntime:
         """Validate a draft document that is not (yet) a file anywhere."""
         return self.run(["spec", "validate", "-", "--format", "json"], stdin=text)
 
+    def packs_lock(self, project):
+        """Declare the project's current documents as its reviewed set.
+
+        Only ever run right after this app registers a pack the user authored
+        — which IS an amendment, made on purpose, by the person making it.
+        Without it the next evaluation refuses with `JPS-LOCK-VERIFY`, because
+        a project carrying a lock refuses to decide under law that left the
+        reviewed set. That refusal is correct; running this command is the
+        honest answer to it, and it leaves a diff a reviewer can read.
+        """
+        return self.run(["packs", "lock", "--format", "json"], project=project)
+
+    def packs_verify(self, project):
+        return self.run(["packs", "verify", "--format", "json"], project=project)
+
+    def has_lock(self, project):
+        return os.path.isfile(os.path.join(project, "jpack.lock.json"))
+
     def packs_validate(self, project):
         return self.run(["packs", "validate", "--format", "json"], project=project)
 

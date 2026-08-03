@@ -25,6 +25,11 @@ from .base import FlowResult, continue_bar, flush, reply, step_button
 ID = "author"
 TITLE = "Author a policy live"
 SUMMARY = "English policy in, validated pack out, then it judges."
+# The project, plus the pack this flow registered into it. Both are
+# rebuildable after a restart: the project is re-copied and the drafted pack
+# document persisted with the session, so it is re-registered from the same
+# bytes rather than re-imagined (bot/reconcile.py).
+NEEDS = ("project", "registered-pack")
 
 MAX_ROUNDS = 3
 
@@ -179,10 +184,18 @@ def _validate_loop(deps, turn, pack, policy_text, body):
     return draft, False
 
 
-def _register(deps, session, project, decision_id, pack, body):
-    """Write the pack into the user's project and let `packs validate` rule."""
+def register_pack(runtime, project, decision_id, pack):
+    """Write one pack into a project and declare it. Returns True on success.
+
+    Separate from the flow's own step because `bot/reconcile.py` calls it too:
+    after a restart the drafted pack document is still in the persisted
+    session, so it is re-registered from the SAME BYTES into the rebuilt
+    scratch copy. That is a rebuild, not a re-imagining — and `packs validate`
+    still rules on the result either way.
+    """
     path = os.path.join("packs", decision_id + ".pack.json")
     absolute = os.path.join(project, path)
+    os.makedirs(os.path.dirname(absolute), exist_ok=True)
     with open(absolute, "w") as handle:
         json.dump(pack, handle, indent=2)
         handle.write("\n")
@@ -204,12 +217,51 @@ def _register(deps, session, project, decision_id, pack, body):
         handle.write("\n")
     os.replace(staging, config_path)
 
+    # The project pins its reviewed set, and registering a pack moves it. The
+    # runtime refuses to decide under law that left that set — correctly — so
+    # the amendment is DECLARED here rather than worked around. `packs lock`
+    # reviews nothing and approves nothing; it records, in a file a reviewer
+    # can diff, that the law changed on purpose.
+    if runtime.has_lock(project):
+        locked = runtime.packs_lock(project)
+        if not locked.ok:
+            return False
+    return True
+
+
+def _register(deps, session, project, decision_id, pack, body):
+    """Write the pack into the user's project and let `packs validate` rule."""
+    path = os.path.join("packs", decision_id + ".pack.json")
+    locked = deps.runtime.has_lock(project)
+    if not register_pack(deps.runtime, project, decision_id, pack):
+        body.extend(
+            blocks.error_blocks(
+                "The project refused the amendment",
+                "`jpack packs lock` did not accept the registered pack, so this project's "
+                "reviewed set still names the documents it named before. Nothing was decided "
+                "under law nobody declared.",
+            )
+        )
+        return False
+
     body.append(
         blocks.section(
             "*Registered.* `{}` is now a file in your project, and `jpack.json` declares it as "
             "decision id `{}`.".format(path, decision_id)
         )
     )
+    if locked:
+        body.append(
+            blocks.section(
+                "*And the reviewed set moved, so I said so.* This project pins its documents in "
+                "`jpack.lock.json`, and the runtime refuses to decide under law that left that "
+                "pin — so registering a pack is an amendment that has to be declared: "
+                "`jpack packs lock`, which reviews nothing and approves nothing, and writes the "
+                "new digests where a reviewer can diff them. Without that line, the evaluation "
+                "you are about to watch would have refused with `JPS-LOCK-VERIFY`, and it would "
+                "have been right to."
+            )
+        )
     ran = deps.runtime.packs_validate(project)
     if ran.ok:
         summary = (ran.payload or {}).get("summary", {})
@@ -261,8 +313,17 @@ def handle(turn, deps):
 
 def _do_draft(turn, deps):
     session = turn.session
-    canned = turn.action == "canned" or not (turn.text or "").strip()
-    policy_text = content.CANNED_POLICY if canned else turn.text.strip()
+    typed = (turn.text or "").strip()
+    # The policy text persists with the session, so a restart mid-flow starts
+    # this use case again from the user's OWN policy rather than quietly
+    # substituting the canned one.
+    remembered = session.data.get("author_policy")
+    if turn.action == "canned" or (not typed and not remembered):
+        policy_text, canned = content.CANNED_POLICY, True
+    elif typed:
+        policy_text, canned = typed, False
+    else:
+        policy_text, canned = remembered, bool(session.data.get("author_canned"))
     session.data["author_policy"] = policy_text
     session.data["author_canned"] = canned
 

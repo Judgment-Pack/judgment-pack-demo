@@ -40,7 +40,8 @@ from bot.desk import DeskManager  # noqa: E402
 from bot.flows.base import Deps, Turn  # noqa: E402
 from bot.model import build_model  # noqa: E402
 from bot.runtime import JpackRuntime  # noqa: E402
-from bot.state import RateLimiter, SessionStore  # noqa: E402
+from bot.state import SessionStore  # noqa: E402
+from bot.store import build_backend  # noqa: E402
 
 
 def workstation_defaults(scratch_root):
@@ -111,9 +112,12 @@ def build(scratch_root):
     config = Config.from_env()
     runtime = JpackRuntime(config)
     desk = DeskManager(config)
-    limiter = RateLimiter(config.model_calls_per_hour)
+    # The same state seam the service uses, with the same default: memory, so
+    # this needs no project, no credentials, and no network.
+    backend = build_backend(config)
+    limiter = backend.limiter("model", config.model_calls_per_hour)
     deps = Deps(config=config, runtime=runtime, desk=desk, model=build_model(config, limiter))
-    store = SessionStore(config, on_evict=desk.stop)
+    store = SessionStore(config, on_evict=desk.stop, backend=backend)
     return deps, store
 
 
