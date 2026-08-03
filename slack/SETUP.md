@@ -131,12 +131,11 @@ not by the workflow file** — which anyone with push access could otherwise edi
 | `CLOUDBUILD_REGION` | where Cloud Build runs | no (defaults to `REGION`) |
 | `SERVICE` | `judgment-pack-slack-demo` | no |
 | `AR_REPO` | `judgment-pack` | no |
-| `SLACK_APP_ID` | `A0123456789` — set it and releases re-point the app's URLs | no |
 | `STATE_BACKEND`, `FIRESTORE_COLLECTION`, `FIRESTORE_DATABASE`, `SESSION_TTL_SECONDS` | session state | no |
 | `MIN_INSTANCES`, `MAX_INSTANCES`, `CONCURRENCY`, `CPU`, `MEMORY`, `TIMEOUT`, `GEMINI_MODEL`, `DEMO_PROJECT`, `SESSION_ROOT`, `GATEWAY_AUTHORITY` | the service shape | no — defaults match `deploy.sh` |
 
 **Repository secrets** — Settings → Secrets and variables → **Actions** (not the environment; see
-below). All three optional:
+below). All four optional:
 
 | secret | what it is |
 |---|---|
@@ -152,6 +151,10 @@ app-configuration tokens that is acceptable; for the three runtime secrets it wo
 is why those live in **Secret Manager** and the workflow only names them.
 
 The Slack-wiring job is skipped entirely — queueing, gate and all — unless the `SLACK_APP_ID`
+repository **secret** is set. A secret rather than a variable, deliberately: GitHub masks secrets
+in workflow logs and makes them write-only, while variables print in plain text — and on a public
+repository, the logs are public. The app id is only semi-sensitive, but the cheaper posture is the
+quieter one. It joins the two config tokens below as repository secrets:
 variable is set. No app id, nothing to re-point, no job.
 
 ### Release
