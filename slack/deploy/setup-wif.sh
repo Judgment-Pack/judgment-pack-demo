@@ -379,7 +379,8 @@ $(printf '\033[1m%s\033[0m' "Everything a release needs exists. Now GitHub.")
     CLOUDBUILD_REGION ${CLOUDBUILD_REGION}
     SERVICE           ${SERVICE}
     AR_REPO           ${AR_REPO}
-    SLACK_APP_ID      (optional) the app id, once you have one — set it and
+    SLACK_APP_ID      (optional, a repository SECRET, not a variable — secrets
+                      are masked in public logs) the app id; set it and
                       each release re-points the app's URLs. Leave it unset
                       and that job skips entirely, gate included.
 

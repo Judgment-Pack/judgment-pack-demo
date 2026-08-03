@@ -352,7 +352,7 @@ jobs:
     # re-point, job skipped entirely. A step-level condition would still have
     # queued the job — and an environment gate on it would still have asked
     # for a second click.
-    if: ${{ vars.SLACK_APP_ID != '' }}
+    if: ${{ secrets.SLACK_APP_ID != '' }}
     runs-on: ubuntu-latest
     # Deliberately NO `environment:`. The two Slack config tokens are
     # REPOSITORY secrets; an environment secret would drag this job through
@@ -409,7 +409,7 @@ jobs:
           SLACK_CONFIG_TOKEN: ${{ secrets.SLACK_CONFIG_TOKEN }}
           SLACK_CONFIG_REFRESH_TOKEN: ${{ secrets.SLACK_CONFIG_REFRESH_TOKEN }}
           URL: ${{ needs.deploy.outputs.url }}
-          APP_ID: ${{ vars.SLACK_APP_ID }}
+          APP_ID: ${{ secrets.SLACK_APP_ID }}
           CAN_ROTATE: ${{ steps.check.outputs.can_rotate }}
         run: |
           set -uo pipefail
