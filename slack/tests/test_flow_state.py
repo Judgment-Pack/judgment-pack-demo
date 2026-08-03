@@ -101,7 +101,11 @@ def test_book_refuses_to_invent_a_trail_when_none_exists():
     deps = fakes.deps(runtime=fakes.FakeRuntime(records=[]))
     replies = flows.start(Turn(user_id="U1", session=state), deps, "book")
     assert "book is empty" in text_of(replies)
-    assert state.completed == {"book"}
+    # An empty book SHOWN is not the audit-trail use case SEEN: no credit,
+    # no dead end — the same message carries the door to use case 1.
+    assert state.completed == set()
+    assert state.active_flow is None
+    assert blocks.ACTION_START + "judge" in text_of(replies)
 
 
 def test_book_replays_the_newest_record_and_compares_bytes():
@@ -159,3 +163,69 @@ def test_unknown_flow_id_falls_back_to_the_menu():
     state = session()
     replies = flows.start(Turn(user_id="U1", session=state), fakes.deps(), "nope")
     assert "I do not know that use case." in text_of(replies)
+
+
+def test_a_failed_flow_is_not_marked_completed_and_offers_retry():
+    from bot.runtime import RuntimeUnavailable
+
+    class DownRuntime(fakes.FakeRuntime):
+        def ensure_project(self, state):
+            raise RuntimeUnavailable("the binary is missing")
+
+    state = session()
+    deps = fakes.deps(runtime=DownRuntime())
+    flows.start(Turn(user_id="U1", session=state), deps, "judge")
+    replies = flows.dispatch(Turn(user_id="U1", session=state, action="case"), deps)
+    # A user who saw four failures must never be told the demo is done.
+    assert state.completed == set()
+    assert state.active_flow is None
+    assert "not marked complete" in text_of(replies)
+    assert blocks.ACTION_START + "judge" in text_of(replies)
+
+
+def test_a_question_mid_flow_is_answered_not_consumed_as_a_step():
+    state = session()
+    deps = fakes.deps()
+    flows.start(Turn(user_id="U1", session=state), deps, "judge")
+    replies = flows.dispatch(
+        Turn(user_id="U1", session=state, text="Can this read our actual vendor policy?"),
+        deps,
+    )
+    # The product's thesis is escalate-rather-than-guess: a question must not
+    # be silently guessed to be a button press.
+    assert state.step == 0
+    assert deps.runtime.evaluations == 0
+    assert state.active_flow == "judge"
+    assert "paused" in text_of(replies)
+
+
+def test_a_question_shaped_policy_paste_still_reaches_the_author_flow():
+    state = session()
+    deps = fakes.deps()
+    flows.start(Turn(user_id="U1", session=state), deps, "author")
+    policy = "Can employees accept gifts over 50 USD?"
+    try:
+        flows.dispatch(Turn(user_id="U1", session=state, text=policy), deps)
+    except Exception:
+        pass
+    assert state.data["author_policy"] == policy
+
+
+def test_leaving_a_flow_credits_nothing_and_resets_the_step():
+    state = session()
+    deps = fakes.deps()
+    flows.start(Turn(user_id="U1", session=state), deps, "judge")
+    flows.dispatch(Turn(user_id="U1", session=state, action="case"), deps)
+    state.leave()
+    assert state.active_flow is None
+    assert state.step == 0
+    assert state.completed == set()
+
+
+def test_question_detection_matches_how_people_type():
+    assert flows.looks_like_question("can this read our policy?")
+    assert flows.looks_like_question("What is a pack")
+    assert flows.looks_like_question("does it run offline?!")
+    assert not flows.looks_like_question("run the next one")
+    assert not flows.looks_like_question("next please")
+    assert not flows.looks_like_question("")

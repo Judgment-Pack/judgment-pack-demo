@@ -125,6 +125,11 @@ class Session:
         self.active_flow = None
         self.step = 0
 
+    def leave(self):
+        """Abandon the active flow without crediting it."""
+        self.active_flow = None
+        self.step = 0
+
 
 class TurnLock:
     """One turn's hold on one session, or an honest failure to get it.

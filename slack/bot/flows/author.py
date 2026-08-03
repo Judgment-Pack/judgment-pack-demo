@@ -23,6 +23,9 @@ from ..runtime import RuntimeUnavailable, diagnostics_summary
 from .base import FlowResult, continue_bar, flush, reply, step_button
 
 ID = "author"
+# The paste step reads free text as the policy, so the router's question
+# guard must stay out of this flow's way.
+CONSUMES_TEXT = True
 TITLE = "Author a policy live"
 SUMMARY = "English policy in, validated pack out, then it judges."
 # The project, plus the pack this flow registered into it. Both are
@@ -348,6 +351,7 @@ def _do_draft(turn, deps):
         return FlowResult(
             replies=[reply(blocks.error_blocks("The demo project is unavailable", str(error)))],
             done=True,
+            failed=True,
         )
 
     body = [
@@ -390,10 +394,12 @@ def _do_draft(turn, deps):
     pack, valid = _validate_loop(deps, turn, pack, policy_text, body)
     session.data["author_pack"] = pack
     if not valid:
-        return FlowResult(replies=[reply(body, text="The validator refused the draft")], done=True)
+        return FlowResult(
+            replies=[reply(body, text="The validator refused the draft")], done=True, failed=True
+        )
 
     if not _register(deps, session, project, decision_id, pack, body):
-        return FlowResult(replies=[reply(body, text="Registration refused")], done=True)
+        return FlowResult(replies=[reply(body, text="Registration refused")], done=True, failed=True)
 
     session.step = 1
     scenario = session.data["author_envelope"].get("scenario") or "a case for this pack"
@@ -426,6 +432,7 @@ def _do_judge(turn, deps):
                 )
             ],
             done=True,
+            failed=True,
         )
 
     session.step = 2
@@ -483,6 +490,7 @@ def _do_unknown(turn, deps):
         return FlowResult(
             replies=[reply(blocks.error_blocks("The evaluation refused", ran.message()))],
             done=True,
+            failed=True,
         )
 
     body = blocks.disposition_blocks(

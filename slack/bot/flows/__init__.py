@@ -17,6 +17,8 @@ The router owns three invariants, so no flow has to remember them:
 
 from __future__ import annotations
 
+import re
+
 from .. import blocks, content
 from .base import Deps, FlowResult, Reply, Turn, reply, step_action, step_button
 from . import attested, author, book, judge
@@ -94,6 +96,22 @@ def start(turn, deps, flow_id):
     return _run(first, deps, flow)
 
 
+_QUESTION_OPENERS = {
+    "what", "why", "how", "can", "could", "does", "do", "did", "is", "are",
+    "was", "were", "who", "where", "when", "will", "would", "should", "which",
+}
+
+
+def looks_like_question(text):
+    stripped = (text or "").strip()
+    if not stripped:
+        return False
+    if stripped.rstrip(".!").endswith("?"):
+        return True
+    first = re.sub(r"[^a-z]", "", stripped.split(None, 1)[0].lower())
+    return first in _QUESTION_OPENERS
+
+
 def dispatch(turn, deps):
     """Route a button or a message into the active flow.
 
@@ -107,12 +125,56 @@ def dispatch(turn, deps):
     if flow is None:
         session.active_flow = None
         return [menu(session)]
+    if (
+        turn.text
+        and not turn.action
+        and looks_like_question(turn.text)
+        and not getattr(flow, "CONSUMES_TEXT", False)
+    ):
+        # A question is not a step. This flow ignores free text, so advancing
+        # on one would silently guess that asking was clicking — the exact
+        # move the product exists to refuse.
+        glue = deps.model.glue(
+            turn.user_id,
+            turn.text,
+            situation="mid-flow in use case '{}'".format(flow.TITLE),
+        )
+        body = blocks.model_blocks(glue.text, deps.model.name, label="Host reply", note=glue.note)
+        body.append(
+            blocks.context(
+                "*{}* is paused exactly where you left it — the buttons above still "
+                "work, or type `menu` to leave it.".format(flow.TITLE)
+            )
+        )
+        return [reply(body, text="Answered — your use case is paused")]
     return _run(turn, deps, flow)
 
 
 def _run(turn, deps, flow):
     result = flow.handle(turn, deps)
     replies = list(result.replies)
+    if result.done and result.failed:
+        turn.session.leave()
+        replies.append(
+            reply(
+                [
+                    blocks.section(
+                        "*{} stopped before the end*, so it is not marked complete — "
+                        "nothing is until you have actually seen it work.".format(flow.TITLE)
+                    ),
+                    blocks.actions(
+                        [
+                            blocks.button(
+                                "Try again →", blocks.ACTION_START + flow.ID, style="primary"
+                            ),
+                            blocks.button("Back to the menu", blocks.ACTION_MENU),
+                        ]
+                    ),
+                ],
+                text="Not completed",
+            )
+        )
+        return replies
     if result.done:
         replies = _finish(turn.session, flow, replies)
     return replies

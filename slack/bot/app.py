@@ -17,11 +17,13 @@ Request handling shape, and why:
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import re
 import sys
 import threading
+import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
@@ -111,6 +113,12 @@ def _dm_channel(client, user_id):
     return opened["channel"]["id"]
 
 
+def _user_tag(user_id):
+    """A stable non-PII handle for the metrics line: enough to count distinct
+    users and follow one user's funnel, nothing to look one up by."""
+    return hashlib.sha256((user_id or "?").encode()).hexdigest()[:8]
+
+
 def _run(job, *args, **kwargs):
     """Do the slow part off the request thread, and never die silently."""
 
@@ -149,55 +157,74 @@ def _turn(client, user_id, channel, build, publish_home=False):
     """
     session = SESSIONS.get(user_id)
     target = channel or _dm_channel(client, user_id)
+    started = time.monotonic()
+    outcome = "ok"
 
-    with TurnLock(session) as held:
-        if not held:
-            _say(client, target, content.BUSY)
-            log.info("dropped a concurrent turn for %s", user_id)
-            return
-        if not TURN_LIMITER.allow(user_id):
-            wait = TURN_LIMITER.retry_after(user_id)
-            _say(
-                client,
-                target,
-                content.TURNS_LIMITED.format(
-                    n=CONFIG.turns_per_hour, minutes=max(1, wait // 60)
-                ),
-            )
-            return
-        if not WORK.acquire(timeout=WORK_WAIT_SECONDS):
-            _say(client, target, content.BUSY_GLOBAL)
-            log.info("work semaphore full; refused a turn for %s", user_id)
-            return
-        try:
-            if not session.persist:
-                # The backend read failed: this turn is served on a blank
-                # session and NOTHING is written for this user until a read
-                # succeeds. Say so — silently pretending they are new is how
-                # progress gets destroyed.
-                _say(client, target, content.STATE_UNAVAILABLE)
-            notice = RECONCILER.reconcile(session)
-            if notice:
-                _say(client, target, notice)
-            deps = replace(DEPS, sink=lambda replies: _post(client, target, replies))
-            replies = build(session, deps) or []
-            _post(client, target, replies)
-        except Exception:  # noqa: BLE001 - a dropped turn is worse than an ugly one
-            log.error("turn for %s failed:\n%s", user_id, traceback.format_exc())
+    try:
+        with TurnLock(session) as held:
+            if not held:
+                outcome = "busy"
+                _say(client, target, content.BUSY)
+                log.info("dropped a concurrent turn for %s", user_id)
+                return
+            if not TURN_LIMITER.allow(user_id):
+                outcome = "limited"
+                wait = TURN_LIMITER.retry_after(user_id)
+                _say(
+                    client,
+                    target,
+                    content.TURNS_LIMITED.format(
+                        n=CONFIG.turns_per_hour, minutes=max(1, wait // 60)
+                    ),
+                )
+                return
+            if not WORK.acquire(timeout=WORK_WAIT_SECONDS):
+                outcome = "busy-global"
+                _say(client, target, content.BUSY_GLOBAL)
+                log.info("work semaphore full; refused a turn for %s", user_id)
+                return
             try:
-                _say(client, target, content.TURN_FAILED)
-            except Exception:  # noqa: BLE001
-                log.error("could not even report the failure to %s", user_id)
-        finally:
-            # Whatever the turn did to the session — advanced a step, finished
-            # a flow, reset one — is written back before the lock is released.
-            SESSIONS.save(session)
-            WORK.release()
-        if publish_home:
-            try:
-                client.views_publish(user_id=user_id, view=_home_view(session))
-            except Exception:  # noqa: BLE001 - the message already landed
-                log.warning("could not refresh the home tab for %s", user_id)
+                if not session.persist:
+                    # The backend read failed: this turn is served on a blank
+                    # session and NOTHING is written for this user until a read
+                    # succeeds. Say so — silently pretending they are new is how
+                    # progress gets destroyed.
+                    _say(client, target, content.STATE_UNAVAILABLE)
+                notice = RECONCILER.reconcile(session)
+                if notice:
+                    _say(client, target, notice)
+                deps = replace(DEPS, sink=lambda replies: _post(client, target, replies))
+                replies = build(session, deps) or []
+                _post(client, target, replies)
+            except Exception:  # noqa: BLE001 - a dropped turn is worse than an ugly one
+                outcome = "failed"
+                log.error("turn for %s failed:\n%s", user_id, traceback.format_exc())
+                try:
+                    _say(client, target, content.TURN_FAILED)
+                except Exception:  # noqa: BLE001
+                    log.error("could not even report the failure to %s", user_id)
+            finally:
+                # Whatever the turn did to the session — advanced a step, finished
+                # a flow, reset one — is written back before the lock is released.
+                SESSIONS.save(session)
+                WORK.release()
+            if publish_home:
+                try:
+                    client.views_publish(user_id=user_id, view=_home_view(session))
+                except Exception:  # noqa: BLE001 - the message already landed
+                    log.warning("could not refresh the home tab for %s", user_id)
+    finally:
+        # The one funnel line this service emits: every turn, every outcome.
+        # Cloud Logging retains these; log-based metrics count them.
+        log.info(
+            "event=turn user=%s flow=%s step=%d completed=%d outcome=%s ms=%d",
+            _user_tag(user_id),
+            session.active_flow or "-",
+            session.step,
+            len(session.completed),
+            outcome,
+            int((time.monotonic() - started) * 1000),
+        )
 
 
 def _home_view(session):
@@ -282,36 +309,50 @@ def on_message(body, event, client):
 
     def build(session, deps):
         session.welcomed = True
-        lowered = text.lower()
-        if lowered in ("menu", "help", "start", "hi", "hello"):
+        # People type "Help!" and "what is this?" — match what they mean,
+        # not their punctuation.
+        lowered = re.sub(r"[^a-z0-9 ]+", "", text.lower()).strip()
+        if lowered in ("stop", "quit", "cancel", "exit", "start over", "reset", "menu"):
+            if session.active_flow:
+                flow = flows.BY_ID.get(session.active_flow)
+                title = flow.TITLE if flow else session.active_flow
+                session.leave()
+                return [
+                    flows.menu(
+                        session,
+                        intro="*Left {}* — it is not marked complete, and nothing was "
+                        "lost. Pick up anywhere:".format(title),
+                    )
+                ]
             return [flows.menu(session)]
-        if lowered in ("about", "what is this"):
+        if lowered in ("help", "start", "hi", "hello", "hey"):
+            return [flows.menu(session)]
+        if lowered in ("about", "what is this", "whats this"):
             return [flows.about(session)]
         replies = flows.dispatch(Turn(user_id=user_id, session=session, text=text), deps)
         if replies is not None:
             return replies
         # Nothing running: conversational glue, attributed like every other
-        # model utterance, then the menu.
+        # model utterance, then the menu. When the model cannot answer, its
+        # note says why — a question answered with a bare menu reads as a
+        # bot that ignored it.
         glue = deps.model.glue(user_id, text, situation="at the menu, nothing running")
-        replies = []
-        if glue.ok:
-            replies.append(
-                flows.reply(
-                    blocks.model_blocks(glue.text, deps.model.name, label="Host reply"),
-                    text="Hello",
-                )
-            )
-        replies.append(flows.menu(session))
-        return replies
+        return [
+            flows.reply(
+                blocks.model_blocks(glue.text, deps.model.name, label="Host reply", note=glue.note),
+                text="Hello",
+            ),
+            flows.menu(session),
+        ]
 
     _run(_turn, client, user_id, channel, build)
 
 
 @app.command("/jpack")
-def on_command(ack, body, client):
+def on_command(ack, body, client, respond):
     ack()
     user_id = body.get("user_id")
-    channel = body.get("channel_id")
+    channel = body.get("channel_id") or ""
     argument = (body.get("text") or "").strip().lower()
     if not user_id:
         return
@@ -324,15 +365,36 @@ def on_command(ack, body, client):
             return flows.start(Turn(user_id=user_id, session=session), deps, argument)
         return [flows.menu(session)]
 
-    # The slash command answers in a DM when the app is not in the channel it
-    # was typed in: a flow is a conversation, not a one-shot reply.
-    _run(_turn, client, user_id, channel, build)
+    # A flow is a conversation, not a one-shot reply — and the bot may not
+    # even be a member of the channel the command was typed in, where a
+    # chat_postMessage dies with not_in_channel and the user sees nothing,
+    # twice. Outside a DM the turn runs in the DM, and the channel gets one
+    # ephemeral pointer: the response_url works whether or not the bot was
+    # ever invited.
+    if channel.startswith("D"):
+        _run(_turn, client, user_id, channel, build)
+        return
+    try:
+        respond(
+            text="Answered in our DM — a use case is a conversation, so it lives there."
+        )
+    except Exception:  # noqa: BLE001 - the pointer is a courtesy; the DM is the answer
+        log.warning("could not post the ephemeral pointer for /jpack")
+    _run(_turn, client, user_id, None, build)
 
 
 @app.action(blocks.ACTION_MENU)
 def on_menu(ack, body, client):
     ack()
-    _respond_with(body, client, lambda session, deps: [flows.menu(session)])
+
+    def build(session, deps):
+        # "Back to the menu" means it: a menu that renders while the flow
+        # stays active is an escape hatch painted on a wall. Leaving credits
+        # nothing; a later step button re-enters the flow cleanly.
+        session.leave()
+        return [flows.menu(session)]
+
+    _respond_with(body, client, build)
 
 
 @app.action(blocks.ACTION_ABOUT)

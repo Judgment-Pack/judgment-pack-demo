@@ -160,6 +160,7 @@ def handle(turn, deps):
         return FlowResult(
             replies=[reply(blocks.error_blocks("The demo project is unavailable", str(error)))],
             done=True,
+            failed=True,
         )
 
     body = [blocks.header(case["title"]), blocks.section(case["prose"])]
@@ -178,7 +179,8 @@ def handle(turn, deps):
         body.extend(blocks.error_blocks("The evaluation refused", ran.message()))
         if not done:
             body.append(continue_bar(ID, "case", case["next_label"] or "Continue →"))
-        return FlowResult(replies=[reply(body, text=case["title"])], done=done)
+        # Ending on a refusal is ending without the demo: not a completion.
+        return FlowResult(replies=[reply(body, text=case["title"])], done=done, failed=done)
 
     payload = ran.payload
     body.extend(

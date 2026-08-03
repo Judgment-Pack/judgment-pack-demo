@@ -47,6 +47,11 @@ class Reply:
 class FlowResult:
     replies: List[Reply] = field(default_factory=list)
     done: bool = False
+    # True when the flow ended without showing what it exists to show — an
+    # unavailable binary, a refused acquisition, a dead desk. Done-and-failed
+    # leaves the flow but never records it as completed: a use case nobody
+    # saw work is not a use case anybody finished.
+    failed: bool = False
 
 
 def reply(block_list, text="Judgment Pack demo"):
