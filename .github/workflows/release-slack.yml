@@ -199,6 +199,8 @@ jobs:
           MEMORY: ${{ vars.MEMORY || '512Mi' }}
           TIMEOUT: ${{ vars.TIMEOUT || '300' }}
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-3.6-flash' }}
+          # A channel id is not a secret; a repo variable keeps it visible.
+          TRIAGE_CHANNEL: ${{ vars.TRIAGE_CHANNEL }}
           DEMO_PROJECT: ${{ vars.DEMO_PROJECT || '/opt/judgment-pack/enterprise-demo' }}
           SESSION_ROOT: ${{ vars.SESSION_ROOT || '/tmp' }}
           GATEWAY_AUTHORITY: ${{ vars.GATEWAY_AUTHORITY || 'gateway:judgment-pack-slack' }}
@@ -227,7 +229,7 @@ jobs:
             --memory="${MEMORY}" \
             --timeout="${TIMEOUT}" \
             --set-secrets "SLACK_BOT_TOKEN=SLACK_BOT_TOKEN:latest,SLACK_SIGNING_SECRET=SLACK_SIGNING_SECRET:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest" \
-            --set-env-vars "GEMINI_MODEL=${GEMINI_MODEL},DEMO_PROJECT=${DEMO_PROJECT},SESSION_ROOT=${SESSION_ROOT},GATEWAY_AUTHORITY=${GATEWAY_AUTHORITY},STATE_BACKEND=${STATE_BACKEND},FIRESTORE_COLLECTION=${FIRESTORE_COLLECTION},SESSION_TTL_SECONDS=${SESSION_TTL_SECONDS},FIRESTORE_DATABASE=${FIRESTORE_DATABASE}" \
+            --set-env-vars "GEMINI_MODEL=${GEMINI_MODEL},DEMO_PROJECT=${DEMO_PROJECT},SESSION_ROOT=${SESSION_ROOT},GATEWAY_AUTHORITY=${GATEWAY_AUTHORITY},STATE_BACKEND=${STATE_BACKEND},FIRESTORE_COLLECTION=${FIRESTORE_COLLECTION},SESSION_TTL_SECONDS=${SESSION_TTL_SECONDS},FIRESTORE_DATABASE=${FIRESTORE_DATABASE},TRIAGE_CHANNEL=${TRIAGE_CHANNEL}" \
             --project "${PROJECT_ID}" --quiet
 
           CANDIDATE="$(gcloud run services describe "${SERVICE}" --region "${REGION}" \

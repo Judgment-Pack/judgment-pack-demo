@@ -217,6 +217,7 @@ def _run(turn, deps, flow):
                             ),
                             blocks.button("Back to the menu", blocks.ACTION_MENU),
                         ]
+                        + ([blocks.human_button()] if blocks.human_button() else [])
                     ),
                 ],
                 text="Not completed",

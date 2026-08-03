@@ -18,6 +18,7 @@ Request handling shape, and why:
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import os
 import re
@@ -33,7 +34,7 @@ from wsgiref.simple_server import WSGIServer, make_server
 if __package__ in (None, ""):  # allow `python3 slack/bot/app.py`
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from bot import blocks, content, flows  # noqa: E402
+from bot import blocks, content, flows, lead  # noqa: E402
 from bot.config import Config  # noqa: E402
 from bot.desk import DeskManager  # noqa: E402
 from bot.flows.base import Deps, Turn  # noqa: E402
@@ -63,6 +64,10 @@ BACKEND = build_backend(CONFIG)
 # just as surely as a flood of paid tokens. Both live behind the same
 # interface as the sessions, so neither app.py nor a flow knows which is live.
 LIMITER = BACKEND.limiter("model", CONFIG.model_calls_per_hour)
+# The lead modal bypasses the turn lock (a trigger_id dies in ~3s), so it
+# gets its own small meter: an unmetered open/submit loop would let one
+# person page the triage channel.
+HUMAN_LIMITER = BACKEND.limiter("human", 6)
 TURN_LIMITER = BACKEND.limiter("turns", CONFIG.turns_per_hour)
 DEPS = Deps(config=CONFIG, runtime=RUNTIME, desk=DESK, model=build_model(CONFIG, LIMITER))
 SESSIONS = SessionStore(CONFIG, on_evict=DESK.stop, backend=BACKEND)
@@ -92,6 +97,9 @@ app = App(
 )
 
 EVENTS_PATH = os.environ.get("SLACK_EVENTS_PATH", "/slack/events")
+
+# The human buttons render only when their promise has a recipient.
+blocks.configure_human_handoff(bool(CONFIG.triage_channel))
 
 
 # --- helpers ---------------------------------------------------------------
@@ -518,6 +526,86 @@ def on_step(ack, body, client):
         return flows.dispatch(turn, deps) or [flows.menu(session)]
 
     _respond_with(body, client, build)
+
+
+@app.action(lead.ACTION_OPEN)
+def on_human(ack, body, client):
+    """Open the lead modal NOW, on this thread.
+
+    The trigger_id is single-use and expires in about three seconds, and the
+    turn lock can hold a turn far longer than that — so this is the one
+    handler that never goes through _turn.
+    """
+    ack()
+    user_id = (body.get("user") or {}).get("id")
+    trigger_id = body.get("trigger_id")
+    if not user_id or not trigger_id or not CONFIG.triage_channel:
+        return
+    if not HUMAN_LIMITER.allow(user_id):
+        _run(
+            _notify_dm,
+            client,
+            user_id,
+            "A few of these are already on their way — try the button again in a "
+            "little while, or just type the note here and I will hold it for you.",
+        )
+        return
+    try:
+        client.views_open(trigger_id=trigger_id, view=lead.build_modal())
+    except Exception:  # noqa: BLE001 - the form failing must not eat the intent
+        log.error("could not open the lead modal:\n%s", traceback.format_exc())
+        _run(
+            _notify_dm,
+            client,
+            user_id,
+            "The form would not open just now — DM me the note instead; it reaches "
+            "the same people.",
+        )
+
+
+def _notify_dm(client, user_id, markdown):
+    Delivery(client, user_id, None).say(markdown)
+
+
+@app.view(lead.CALLBACK_ID)
+def on_lead(ack, body, client):
+    ack()
+    user = body.get("user") or {}
+    view = body.get("view") or {}
+    _run(_deliver_lead, client, user.get("id"), user.get("username") or user.get("name") or "", view)
+
+
+def _deliver_lead(client, user_id, username, view):
+    """Post the lead to the triage channel, or refuse to lose it quietly.
+
+    Delivery failure DMs the user a plain fallback naming where to file the
+    note, and the full payload goes to the error log so the lead survives
+    somewhere even then. Repeat notes from the same user thread under their
+    first, so the channel stays a queue instead of a pile.
+    """
+    parsed = lead.parse_submission(view)
+    session = SESSIONS.get(user_id, create=False)
+    thread_ts = session.data.get("triage_ts") if session is not None else None
+    try:
+        posted = client.chat_postMessage(
+            channel=CONFIG.triage_channel,
+            blocks=lead.triage_blocks(user_id, username, parsed, session),
+            text="New lead",
+            **({"thread_ts": thread_ts} if thread_ts else {}),
+        )
+        if session is not None and not thread_ts:
+            session.data["triage_ts"] = posted.get("ts")
+            SESSIONS.save(session)
+    except Exception:  # noqa: BLE001 - a lost lead is the one unacceptable outcome
+        log.error(
+            "LEAD DELIVERY FAILED for %s — payload follows so nothing is lost:\n%s\n%s",
+            user_id,
+            json.dumps({"username": username, "lead": parsed}, sort_keys=True),
+            traceback.format_exc(),
+        )
+        _notify_dm(client, user_id, lead.FALLBACK.format(issues=content.DEMO_ISSUES))
+        return
+    _notify_dm(client, user_id, lead.confirmation_text(parsed))
 
 
 def _respond_with(body, client, build):
