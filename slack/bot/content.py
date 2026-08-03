@@ -204,6 +204,13 @@ BUSY_GLOBAL = (
     "moment."
 )
 
+STATE_UNAVAILABLE = (
+    ":warning: *I cannot reach the place your progress is kept right now,* so this step runs on a "
+    "blank slate and nothing about it is being saved — deliberately: writing a fresh session over "
+    "one I could not read would destroy the progress it is meant to protect. Whatever you had "
+    "finished is still in there. Try again in a minute and it should come back."
+)
+
 TURN_FAILED = (
     ":octagonal_sign: *That step failed and I am not going to pretend otherwise.* No disposition "
     "was produced, so there is nothing to report as one. The details went to the service log the "

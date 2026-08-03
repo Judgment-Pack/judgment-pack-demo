@@ -12,12 +12,15 @@ their authoring flow cannot register a pack into anybody else's project.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shutil
 import subprocess
 import tempfile
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
+
+log = logging.getLogger("jpack-slack.runtime")
 
 
 class RuntimeUnavailable(Exception):
@@ -73,8 +76,25 @@ class JpackRuntime:
         temporary directory and moved into place, so a half-copied project is
         never visible and a lost race costs a copy rather than a crash. (Turns
         are serialized per session, so the race is defence in depth.)
+
+        The stored `scratch_dir` is a HINT that has been through an external
+        datastore, and this function deletes what it points at. A hint outside
+        the configured scratch root is refused and replaced with the path this
+        process would have chosen — which also makes a changed SESSION_ROOT
+        take effect on restored sessions instead of being silently ignored.
         """
-        path = session.scratch_dir or self.session_dir(session.user_id)
+        from .state import inside  # local import: state imports runtime's config only
+
+        default = self.session_dir(session.user_id)
+        path = session.scratch_dir or default
+        if path != default and not inside(path, self.config.session_root):
+            log.warning(
+                "ignoring the stored scratch path %r for %s: it is not inside %r",
+                path,
+                session.user_id,
+                self.config.session_root,
+            )
+            path = default
         session.scratch_dir = path
         if os.path.isdir(os.path.join(path, "packs")):
             return path
@@ -230,6 +250,24 @@ class JpackRuntime:
     def spec_validate_text(self, text):
         """Validate a draft document that is not (yet) a file anywhere."""
         return self.run(["spec", "validate", "-", "--format", "json"], stdin=text)
+
+    def packs_lock(self, project):
+        """Declare the project's current documents as its reviewed set.
+
+        Only ever run right after this app registers a pack the user authored
+        — which IS an amendment, made on purpose, by the person making it.
+        Without it the next evaluation refuses with `JPS-LOCK-VERIFY`, because
+        a project carrying a lock refuses to decide under law that left the
+        reviewed set. That refusal is correct; running this command is the
+        honest answer to it, and it leaves a diff a reviewer can read.
+        """
+        return self.run(["packs", "lock", "--format", "json"], project=project)
+
+    def packs_verify(self, project):
+        return self.run(["packs", "verify", "--format", "json"], project=project)
+
+    def has_lock(self, project):
+        return os.path.isfile(os.path.join(project, "jpack.lock.json"))
 
     def packs_validate(self, project):
         return self.run(["packs", "validate", "--format", "json"], project=project)

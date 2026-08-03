@@ -1,5 +1,9 @@
-# Two dependencies, both pinned. Everything else the app uses is stdlib —
+# Three dependencies, all pinned. Everything else the app uses is stdlib —
 # the demo engine is binaries (jpack, gateway) and the demo project's files,
 # not libraries.
 slack-bolt==1.30.0
 google-genai==2.16.0
+# Session metadata only, and only when STATE_BACKEND=firestore. What it buys
+# is that a user's PROGRESS survives a restart; the scratch project and the
+# signing desk are rebuilt per container either way (slack/DESIGN.md).
+google-cloud-firestore==2.28.0

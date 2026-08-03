@@ -21,6 +21,11 @@ from .base import FlowResult, continue_bar, reply
 ID = "book"
 TITLE = "The decision book"
 SUMMARY = "The audit trail your own choices wrote, replayed."
+# The project AND the audit trail inside it. The trail is a file the earlier
+# use cases wrote into the scratch copy, so a re-copied project comes back
+# with an empty book — not rebuildable, and not something to paper over
+# (bot/reconcile.py).
+NEEDS = ("project", "audit-trail")
 
 INTRO = (
     "*4 · The decision book*\n\n"
@@ -127,8 +132,11 @@ def _decision_id_for(deps, project, pack_id):
 
 
 def handle(turn, deps):
+    # Step, not action: after a restart the reconciler resets this flow to step
+    # 0, and the click that arrives may well be "replay". Step 0 means show the
+    # book, whatever button got us here.
     session = turn.session
-    if turn.action == "start" and session.step == 0:
+    if session.step == 0:
         return _show_book(turn, deps)
     return _replay(turn, deps)
 

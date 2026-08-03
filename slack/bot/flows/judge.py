@@ -22,6 +22,10 @@ from .base import FlowResult, continue_bar, flush, reply
 ID = "judge"
 TITLE = "Judge a vendor"
 SUMMARY = "A clean approval, a hard stop, and an honest escalation."
+# What this flow needs from the machine it runs on, for bot/reconcile.py: a
+# scratch copy of the project, which any container can re-copy. Nothing else
+# — each case builds its own facts — so a restart mid-flow resumes.
+NEEDS = ("project",)
 
 INTRO = (
     "*1 · Judge a vendor*\n\n"

@@ -23,6 +23,11 @@ from .base import FlowResult, continue_bar, flush, reply
 ID = "attested"
 TITLE = "The attested screening"
 SUMMARY = "A signed receipt, a forgery, and a refusal."
+# The project AND a live desk. A desk is not rebuildable: its signing key was
+# minted in a container that is gone, and receipts signed by a key that no
+# longer exists cannot be re-created — that is what a receipt IS. A restart
+# mid-flow therefore restarts this use case, loudly (bot/reconcile.py).
+NEEDS = ("project", "desk")
 
 SUBJECT = "Meridian Maritime Holdings SA"
 TEMPLATE = "graphs/inputs-meridian-match.json"

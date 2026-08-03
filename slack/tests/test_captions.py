@@ -164,3 +164,55 @@ def test_the_glue_path_attributes_the_model_like_narrations_do():
         "conversational glue must go through the attributed, escaped model surface"
     )
     assert "blocks.section(glue.text)" not in source
+
+
+# --- a refused amendment must not wreck the project ------------------------
+
+
+def test_a_failed_lock_leaves_the_project_exactly_as_it_was(tmp_path):
+    """Registering writes two files before the amendment can be declared.
+
+    If `packs lock` refuses after those writes, the project is drifted from
+    its own lock — and then EVERY later evaluation in that session refuses,
+    including use cases 1, 3 and 4, whose packs nobody touched. So the writes
+    are rolled back and the refusal is all that is left behind.
+    """
+    from bot.flows.author import register_pack
+
+    project = tmp_path / "session-U1"
+    (project / "packs").mkdir(parents=True)
+    config_before = '{\n "configVersion": "3",\n "packs": {}\n}\n'
+    (project / "jpack.json").write_text(config_before)
+    (project / "jpack.lock.json").write_text("{}")
+
+    class Refusing(fakes.FakeRuntime):
+        def packs_lock(self, project):
+            return fakes.Ran(
+                argv=["jpack", "packs", "lock"], returncode=1, stdout="", stderr="refused"
+            )
+
+    ok = register_pack(Refusing(), str(project), "gifts-hospitality", {"version": "0.1.0"})
+
+    assert ok is False
+    assert (project / "jpack.json").read_text() == config_before, "the declarations are restored"
+    assert not (project / "packs" / "gifts-hospitality.pack.json").exists(), (
+        "the half-registered pack file is removed"
+    )
+
+
+def test_a_successful_registration_leaves_both_writes_in_place(tmp_path):
+    import json as _json
+
+    from bot.flows.author import register_pack
+
+    project = tmp_path / "session-U1"
+    (project / "packs").mkdir(parents=True)
+    (project / "jpack.json").write_text('{"configVersion": "3", "packs": {}}')
+    (project / "jpack.lock.json").write_text("{}")
+
+    runtime = fakes.FakeRuntime()
+    assert register_pack(runtime, str(project), "gifts-hospitality", {"version": "0.1.0"}) is True
+    assert (project / "packs" / "gifts-hospitality.pack.json").exists()
+    declared = _json.loads((project / "jpack.json").read_text())
+    assert "gifts-hospitality" in declared["packs"]
+    assert ("packs-lock",) in runtime.calls

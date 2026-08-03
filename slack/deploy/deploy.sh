@@ -3,7 +3,7 @@
 #
 #   ./slack/deploy/deploy.sh
 #
-# What it does, in order: enables the four APIs it needs, makes an Artifact
+# What it does, in order: enables the five APIs it needs, makes an Artifact
 # Registry repository if there is none, creates the three secrets in Secret
 # Manager if they do not exist (reading them from your terminal WITHOUT
 # echoing, never from a file it leaves behind), grants the service account
@@ -40,6 +40,16 @@ TIMEOUT="${TIMEOUT:-300}"
 DEMO_PROJECT="${DEMO_PROJECT:-/opt/judgment-pack/enterprise-demo}"
 SESSION_ROOT="${SESSION_ROOT:-/tmp}"
 GATEWAY_AUTHORITY="${GATEWAY_AUTHORITY:-gateway:judgment-pack-slack}"
+# Session metadata in Firestore: a user's progress survives a restart, a
+# redeploy, or this instance being replaced. It does NOT make the demo
+# multi-instance — the scratch project and the signing desk are local to a
+# container by nature — so MIN/MAX_INSTANCES stay at 1 (slack/DESIGN.md).
+STATE_BACKEND="${STATE_BACKEND:-firestore}"
+FIRESTORE_COLLECTION="${FIRESTORE_COLLECTION:-slack-demo-sessions}"
+SESSION_TTL_SECONDS="${SESSION_TTL_SECONDS:-7200}"
+# Empty means the project's (default) database, which is what deploy.sh
+# creates. Set FIRESTORE_DATABASE when the default one is Datastore mode.
+FIRESTORE_DATABASE="${FIRESTORE_DATABASE:-}"
 
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 die() { printf '\nERROR: %s\n' "$*" >&2; exit 1; }
@@ -55,15 +65,16 @@ gcloud auth print-access-token >/dev/null 2>&1 \
 
 say "Project ${PROJECT_ID}, region ${REGION}, service ${SERVICE}"
 
-say "1/6 Enabling the APIs this needs (idempotent)"
+say "1/7 Enabling the APIs this needs (idempotent)"
 gcloud services enable \
   run.googleapis.com \
   cloudbuild.googleapis.com \
   secretmanager.googleapis.com \
   artifactregistry.googleapis.com \
+  firestore.googleapis.com \
   --project "${PROJECT_ID}" --quiet
 
-say "2/6 Artifact Registry repository"
+say "2/7 Artifact Registry repository"
 if ! gcloud artifacts repositories describe "${AR_REPO}" \
       --location "${REGION}" --project "${PROJECT_ID}" >/dev/null 2>&1; then
   gcloud artifacts repositories create "${AR_REPO}" \
@@ -112,7 +123,7 @@ ensure_secret() {
   echo "  ${name}: created"
 }
 
-say "3/6 Secrets"
+say "3/7 Secrets"
 ensure_secret SLACK_BOT_TOKEN     "Slack app → OAuth & Permissions → Bot User OAuth Token (xoxb-…)"
 ensure_secret SLACK_SIGNING_SECRET "Slack app → Basic Information → Signing Secret"
 ensure_secret GEMINI_API_KEY      "Google AI Studio → API key (this powers narration and drafting only)"
@@ -127,11 +138,93 @@ for secret in SLACK_BOT_TOKEN SLACK_SIGNING_SECRET GEMINI_API_KEY; do
 done
 echo "  ${runtime_sa} may read the three secrets"
 
+# --- session state ---------------------------------------------------------
+# Firestore holds session METADATA — where a user is in the demo — so a
+# restart does not drop somebody mid-run. Their scratch project and their
+# screening desk are rebuilt by the next container instead; what cannot be
+# rebuilt (a desk's receipts, a decision book) is reported to them plainly
+# rather than pretended (see reconciliation in slack/DESIGN.md).
+if [ "${STATE_BACKEND}" = "firestore" ]; then
+  say "4/7 Firestore (Native mode) for session state"
+  existing_type="$(gcloud firestore databases describe --project "${PROJECT_ID}" \
+                     --format='value(type)' 2>/dev/null || true)"
+  if [ -n "${existing_type}" ]; then
+    # A project gets ONE default database and its mode is permanent. A
+    # Datastore-mode one cannot serve the Native client, and "it exists" would
+    # be a deploy that succeeds and a service that dies at boot.
+    case "${existing_type}" in
+      FIRESTORE_NATIVE)
+        echo "  database exists (Native mode)" ;;
+      *)
+        die "this project's default Firestore database is ${existing_type}, and the
+  app needs Native mode. The default database's mode cannot be changed, so either:
+    • create a named Native database and point the app at it:
+        gcloud firestore databases create --database=slack-demo \\
+          --location=${REGION} --type=firestore-native --project ${PROJECT_ID}
+      then set FIRESTORE_DATABASE=\"slack-demo\" in slack/deploy/deploy.env; or
+    • set STATE_BACKEND=memory in slack/deploy/deploy.env to run without one." ;;
+    esac
+  else
+    # A project gets one default database, and creating a second time is an
+    # error rather than a no-op: tolerate exactly that.
+    if gcloud firestore databases create --location="${REGION}" \
+         --type=firestore-native --project "${PROJECT_ID}" --quiet 2>/tmp/fs-create.$$; then
+      echo "  created a Native-mode database in ${REGION}"
+    else
+      if grep -qiE "already exists|ALREADY_EXISTS" /tmp/fs-create.$$; then
+        echo "  database already exists"
+      else
+        cat /tmp/fs-create.$$ >&2
+        rm -f /tmp/fs-create.$$
+        die "could not create the Firestore database"
+      fi
+    fi
+    rm -f /tmp/fs-create.$$
+  fi
+
+  gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
+    --member="serviceAccount:${runtime_sa}" \
+    --role=roles/datastore.user --quiet >/dev/null
+  echo "  ${runtime_sa} may read and write session documents"
+
+  # THREE collections, not one: sessions, the de-duplication records the
+  # Events API needs, and the rate-limit buckets. Each writes an expires_at
+  # for a policy that has to exist per collection group, and only the sessions
+  # one is also swept by the running app — the other two have no deleter at
+  # all without this.
+  ttl_missing=""
+  for group in "${FIRESTORE_COLLECTION}" \
+               "${FIRESTORE_COLLECTION}-events" \
+               "${FIRESTORE_COLLECTION}-limits"; do
+    if gcloud firestore fields ttls update expires_at \
+         --collection-group="${group}" --enable-ttl \
+         --project "${PROJECT_ID}" --quiet >/dev/null 2>&1; then
+      echo "  TTL policy on expires_at enabled for ${group}"
+    else
+      ttl_missing="${ttl_missing} ${group}"
+    fi
+  done
+  if [ -n "${ttl_missing}" ]; then
+    echo "  NOTE: could not set the TTL policy for:${ttl_missing}"
+    echo "  Run this once per collection group (idempotent):"
+    for group in ${ttl_missing}; do
+      echo "    gcloud firestore fields ttls update expires_at \\"
+      echo "      --collection-group=${group} --enable-ttl --project ${PROJECT_ID}"
+    done
+    echo "  The running app deletes expired SESSION documents itself; the policy is"
+    echo "  what deletes them while no instance is running, and it is the only thing"
+    echo "  that ever deletes the -events and -limits documents."
+  fi
+else
+  say "4/7 Session state: ${STATE_BACKEND} (in this instance's memory only)"
+  echo "  a restart or a redeploy drops every session mid-run — see slack/DESIGN.md"
+fi
+
 # --- build -----------------------------------------------------------------
 TAG="$(date -u +%Y%m%d-%H%M%S)"
 IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/${SERVICE}:${TAG}"
 
-say "4/6 Building ${IMAGE} (context: ${root})"
+say "5/7 Building ${IMAGE} (context: ${root})"
 gcloud builds submit "${root}" \
   --config "${here}/cloudbuild.yaml" \
   --substitutions "_IMAGE=${IMAGE}" \
@@ -151,7 +244,7 @@ gcloud builds submit "${root}" \
 #                    request, which would throttle exactly the work that
 #                    matters. It costs always-allocated CPU on one instance;
 #                    that is the price of the architecture, stated in SETUP.md.
-say "5/6 Deploying to Cloud Run (one instance, CPU always allocated)"
+say "6/7 Deploying to Cloud Run (one instance, CPU always allocated)"
 gcloud run deploy "${SERVICE}" \
   --image "${IMAGE}" \
   --region "${REGION}" \
@@ -165,13 +258,13 @@ gcloud run deploy "${SERVICE}" \
   --memory="${MEMORY}" \
   --timeout="${TIMEOUT}" \
   --set-secrets "SLACK_BOT_TOKEN=SLACK_BOT_TOKEN:latest,SLACK_SIGNING_SECRET=SLACK_SIGNING_SECRET:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest" \
-  --set-env-vars "GEMINI_MODEL=${GEMINI_MODEL},DEMO_PROJECT=${DEMO_PROJECT},SESSION_ROOT=${SESSION_ROOT},GATEWAY_AUTHORITY=${GATEWAY_AUTHORITY}" \
+  --set-env-vars "GEMINI_MODEL=${GEMINI_MODEL},DEMO_PROJECT=${DEMO_PROJECT},SESSION_ROOT=${SESSION_ROOT},GATEWAY_AUTHORITY=${GATEWAY_AUTHORITY},STATE_BACKEND=${STATE_BACKEND},FIRESTORE_COLLECTION=${FIRESTORE_COLLECTION},SESSION_TTL_SECONDS=${SESSION_TTL_SECONDS},FIRESTORE_DATABASE=${FIRESTORE_DATABASE}" \
   --project "${PROJECT_ID}" --quiet
 
 URL="$(gcloud run services describe "${SERVICE}" --region "${REGION}" \
         --project "${PROJECT_ID}" --format='value(status.url)')"
 
-say "6/6 Done. Paste this ONE url into three fields of the Slack app:"
+say "7/7 Done. Paste this ONE url into three fields of the Slack app:"
 cat <<EOF
 
     ${URL}/slack/events
@@ -183,6 +276,12 @@ cat <<EOF
 
   Health check (should say "up"):   curl -s ${URL}/
   Logs:  gcloud run services logs tail ${SERVICE} --region ${REGION} --project ${PROJECT_ID}
+
+  Session state: ${STATE_BACKEND}$([ "${STATE_BACKEND}" = "firestore" ] && printf ' (collections %s, %s-events, %s-limits)' "${FIRESTORE_COLLECTION}" "${FIRESTORE_COLLECTION}" "${FIRESTORE_COLLECTION}")
+  Confirm the three TTL policies that delete abandoned documents are on:
+    for g in ${FIRESTORE_COLLECTION} ${FIRESTORE_COLLECTION}-events ${FIRESTORE_COLLECTION}-limits; do
+      gcloud firestore fields ttls list --collection-group="\$g" --project ${PROJECT_ID}
+    done
 
   The service is public on purpose — Slack posts to it from the internet, and
   every request is authenticated by its signature against the signing secret

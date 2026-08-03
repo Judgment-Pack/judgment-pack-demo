@@ -36,8 +36,10 @@ from bot.config import Config  # noqa: E402
 from bot.desk import DeskManager  # noqa: E402
 from bot.flows.base import Deps, Turn  # noqa: E402
 from bot.model import build_model  # noqa: E402
+from bot.reconcile import Reconciler  # noqa: E402
 from bot.runtime import JpackRuntime  # noqa: E402
-from bot.state import EventDedupe, RateLimiter, SessionStore, TurnLock  # noqa: E402
+from bot.state import SessionStore, TurnLock  # noqa: E402
+from bot.store import build_backend  # noqa: E402
 
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO"),
@@ -50,14 +52,23 @@ CONFIG.require_slack()  # a server that cannot verify signatures must not serve
 
 RUNTIME = JpackRuntime(CONFIG)
 DESK = DeskManager(CONFIG)
+# Where session metadata lives, decided once. A Firestore backend that cannot
+# be reached raises here, before the server starts: a demo configured to
+# remember that silently forgets is worse than one that refuses to boot.
+BACKEND = build_backend(CONFIG)
 # Two budgets: the vendor-metered one over model calls, and a generous one
 # over turns, because a flood of free subprocesses sinks one small instance
-# just as surely as a flood of paid tokens.
-LIMITER = RateLimiter(CONFIG.model_calls_per_hour)
-TURN_LIMITER = RateLimiter(CONFIG.turns_per_hour)
+# just as surely as a flood of paid tokens. Both live behind the same
+# interface as the sessions, so neither app.py nor a flow knows which is live.
+LIMITER = BACKEND.limiter("model", CONFIG.model_calls_per_hour)
+TURN_LIMITER = BACKEND.limiter("turns", CONFIG.turns_per_hour)
 DEPS = Deps(config=CONFIG, runtime=RUNTIME, desk=DESK, model=build_model(CONFIG, LIMITER))
-SESSIONS = SessionStore(CONFIG, on_evict=DESK.stop)
-SEEN = EventDedupe()
+SESSIONS = SessionStore(CONFIG, on_evict=DESK.stop, backend=BACKEND)
+# Rebuilds the local half of a session this process has never run — and says
+# so plainly when something (a signing desk, a decision book) cannot be
+# rebuilt rather than resuming a flow whose evidence is gone.
+RECONCILER = Reconciler(RUNTIME, DESK)
+SEEN = BACKEND.dedupe()
 WORKERS = int(os.environ.get("WORKERS", "8"))
 POOL = ThreadPoolExecutor(max_workers=WORKERS)
 # Strictly below the pool size: there is always a worker free to answer with,
@@ -129,6 +140,12 @@ def _turn(client, user_id, channel, build, publish_home=False):
        size, so the pool always has a thread left to answer with.
     4. THE SINK. Replies a flow flushes go out the moment they exist, which
        is how a disposition reaches Slack without waiting for a narration.
+
+    And, once per restored session, RECONCILIATION: a turn whose session came
+    back from durable state into a container that has never run it gets its
+    rebuildable parts rebuilt first, and one plain line when something cannot
+    be rebuilt. That line is posted before the flow's own output, because the
+    user is owed the reason before the consequence.
     """
     session = SESSIONS.get(user_id)
     target = channel or _dm_channel(client, user_id)
@@ -153,6 +170,15 @@ def _turn(client, user_id, channel, build, publish_home=False):
             log.info("work semaphore full; refused a turn for %s", user_id)
             return
         try:
+            if not session.persist:
+                # The backend read failed: this turn is served on a blank
+                # session and NOTHING is written for this user until a read
+                # succeeds. Say so — silently pretending they are new is how
+                # progress gets destroyed.
+                _say(client, target, content.STATE_UNAVAILABLE)
+            notice = RECONCILER.reconcile(session)
+            if notice:
+                _say(client, target, notice)
             deps = replace(DEPS, sink=lambda replies: _post(client, target, replies))
             replies = build(session, deps) or []
             _post(client, target, replies)
@@ -163,6 +189,9 @@ def _turn(client, user_id, channel, build, publish_home=False):
             except Exception:  # noqa: BLE001
                 log.error("could not even report the failure to %s", user_id)
         finally:
+            # Whatever the turn did to the session — advanced a step, finished
+            # a flow, reset one — is written back before the lock is released.
+            SESSIONS.save(session)
             WORK.release()
         if publish_home:
             try:
@@ -374,8 +403,20 @@ def wsgi_app(environ, start_response):
     if path == EVENTS_PATH:
         return SLACK_HANDLER(environ, start_response)
     if path in ("/", "/healthz"):
+        # Reports the state backend too: a service that is up but has lost its
+        # durable store is a different thing from a healthy one, and an
+        # operator should not have to read the logs to find out.
+        state = "state={} {}".format(
+            SESSIONS.backend_name, "DEGRADED" if SESSIONS.degraded else "ok"
+        )
         start_response("200 OK", [("Content-Type", "text/plain; charset=utf-8")])
-        return [b"judgment-pack slack demo: up. Slack posts to " + EVENTS_PATH.encode()]
+        return [
+            b"judgment-pack slack demo: up. Slack posts to "
+            + EVENTS_PATH.encode()
+            + b" ("
+            + state.encode()
+            + b")"
+        ]
     start_response("404 Not Found", [("Content-Type", "text/plain; charset=utf-8")])
     return [b"not found"]
 
@@ -385,6 +426,12 @@ SLACK_HANDLER = SlackRequestHandler(app, path=EVENTS_PATH)
 
 def main():
     log.info("configuration: %s", CONFIG.redacted())
+    log.info(
+        "state: %s — session progress %s restarts; scratch projects and screening "
+        "desks are rebuilt per container either way",
+        BACKEND.name,
+        "survives" if BACKEND.durable else "does NOT survive",
+    )
     version = RUNTIME.run(["version"])
     if version.ok:
         log.info("runtime: %s", version.stdout.strip().replace("\n", " "))
