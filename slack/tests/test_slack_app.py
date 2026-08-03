@@ -575,7 +575,7 @@ def test_the_deploy_is_dark_then_promoted():
     assert "update-traffic" in body
     assert body.index("--no-traffic") < body.index("update-traffic")
     # …and the candidate is smoke-tested in between.
-    assert body.index("--no-traffic") < body.index("/healthz") < body.index("update-traffic")
+    assert body.index("--no-traffic") < body.index("/health") < body.index("update-traffic")
 
 
 def test_the_image_is_deployed_by_digest():
@@ -621,7 +621,7 @@ def test_the_smoke_test_reads_the_state_backend_status():
         for job in workflow["jobs"].values()
         for step in job["steps"]
     )
-    assert "/healthz" in everything
+    assert "/health" in everything
     assert "DEGRADED" in everything
 
 

@@ -172,7 +172,7 @@ Then, in order:
    has already run four use cases against the real binaries. The **digest** is what gets deployed.
 4. **dark deploy** — the revision starts with **no traffic**, under a `candidate` tag.
 5. **prove the candidate** — its own URL must answer the banner, report `state=… ok` rather than
-   `DEGRADED` on `/healthz`, and refuse an unsigned `POST /slack/events` with 401.
+   `DEGRADED` on `/health`, and refuse an unsigned `POST /slack/events` with 401.
 6. **promote** — only now does traffic move. A failure at any earlier point leaves the previous
    revision serving every Slack request.
 7. **confirm and wire** — the live URL is re-checked from outside, and if `SLACK_APP_ID` is set the

@@ -260,7 +260,7 @@ git tag slack-vX.Y.Z
         │      └─ step 2: run the whole demo INSIDE the built image
         │         └─ images: pushed only if BOTH steps pass
         │  resolve the DIGEST, deploy it with --no-traffic --tag candidate
-        │  smoke the CANDIDATE: banner, /healthz not DEGRADED, unsigned 401
+        │  smoke the CANDIDATE: banner, /health not DEGRADED, unsigned 401
         │  verify the allUsers invoker binding (role AND member)
         │  update-traffic --to-latest        ← only now does traffic move
         ▼
