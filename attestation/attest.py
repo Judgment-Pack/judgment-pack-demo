@@ -60,6 +60,9 @@ from datetime import datetime, timezone
 GATEWAY_URL = os.environ.get("GATEWAY_URL", "http://127.0.0.1:8787")
 AUTHORITY = os.environ.get("GATEWAY_AUTHORITY", "gateway:enterprise-demo")
 STORE = os.environ.get("GATEWAY_STORE", "/gateway/store")
+# The reference verifier binary: on PATH in the demo image, named explicitly
+# on a workstation (the Slack dryrun exports it beside the desk's own copy).
+GATEWAY_BIN = os.environ.get("GATEWAY_BIN", "gateway")
 PIN = os.environ.get("GATEWAY_PIN", "/gateway-pin/pinned.pubkey")
 DERIVE_CLI = os.environ.get(
     "DERIVE_CLI", "/usr/local/share/derivation-rule/derive_cli.py"
@@ -288,7 +291,7 @@ def run_verify(session):
     except OSError as error:
         fail(f"attest: cannot read the pinned public key at {PIN}: {error}")
     proc = subprocess.run(
-        ["gateway", "verify", STORE, REGISTRY_FETCHED, AUTHORITY],
+        [GATEWAY_BIN, "verify", STORE, REGISTRY_FETCHED, AUTHORITY],
         input=pin, capture_output=True)
     if proc.returncode != 0:
         fail("attest: NO VERDICT — the verifier could not audit the store at all",

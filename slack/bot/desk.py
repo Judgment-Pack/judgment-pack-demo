@@ -296,13 +296,14 @@ class DeskManager:
             "GATEWAY_PIN": desk.pin_file,
             "DERIVE_CLI": self.config.derive_cli,
             "DERIVE_RULE": self.config.derive_rule,
+            # `attest` delegates verification to the reference binary; name it
+            # outright rather than hoping a PATH entry resolves the bare word
+            # — a workstation's build is rarely called exactly `gateway`.
+            "GATEWAY_BIN": os.path.abspath(self.config.gateway_bin)
+            if os.sep in self.config.gateway_bin
+            else self.config.gateway_bin,
         }
-        env = self.config.child_env(explicit)
-        # `attest` delegates verification to the reference binary by name.
-        gateway_dir = os.path.dirname(os.path.abspath(self.config.gateway_bin))
-        if os.sep in self.config.gateway_bin and os.path.isdir(gateway_dir):
-            env["PATH"] = gateway_dir + os.pathsep + env.get("PATH", "")
-        return env
+        return self.config.child_env(explicit)
 
     def attest(self, session, project, verb, *args):
         desk = session.data.get("desk")
