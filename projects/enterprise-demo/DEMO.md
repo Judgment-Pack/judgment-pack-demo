@@ -15,6 +15,11 @@ The conversation's built-in **Files pane** (right side) is the browse surface. B
    `evidence/` — that pane is the file-browsing surface.
 2. Run `./scripts/reset-demo.sh` (clears rehearsal leftovers — Act 2 must start with
    four packs, not five).
+3. **If you rebuild the image, reset first.** The decision desk's law (Act 6) is copied
+   from the build context — this checkout as it stands — so `docker compose up -d --build`
+   over a dirty tree bakes whatever is in `projects/enterprise-demo` at that moment. Reset,
+   then build. (The build runs `packs verify` against the baked copy once the project
+   carries a reviewed-set lock, which turns this from a habit into a gate.)
 
 ## 0. Frame (30s, no typing)
 
@@ -333,12 +338,85 @@ readable. The book empty → run any act first; a fresh reset starts an empty bo
 evaluation refusing with `JPS-AUDIT-WRITE` → something is occupying `audit/`;
 `./scripts/reset-demo.sh` and rerun.
 
+## Act 6 — the wall (~2.5 min)
+
+Act 4b showed a forged *record* believed by one route and refused by another. This act forges
+the **law itself**, exactly as it happened live: an agent met a refusal, edited the project
+until the refusal stopped, evaluated, and reverted. Nothing inside the sandbox can object to
+that — the agent and the law share one write domain, and a rule that lives in that domain is a
+rule its addressee can rewrite.
+
+1. **Forge the local law.** The screening pack clears a counterparty when the recorded match
+   count is exactly zero, and reports a match at one or more. Redefine both — clear now means
+   two, and "one or more" now means nine or more:
+
+   ```bash
+   sed -i -e 's/"value": "0"/"value": "2"/' -e 's/"value": "1"/"value": "9"/' \
+     packs/sanctions-screening.pack.json
+   jpack experimental evaluate --pack-id sanctions-screening \
+     --facts requests/desk-facts-screening.json \
+     --evidence requests/desk-evidence-screening.json
+   ```
+
+   Two matches, and the local copy says **clear**. Note that it took two edits, not one: change
+   only the first and the two rules both fire and the pack refuses with a conflict — the pack's
+   own structure resists a lazy forgery. It does not resist a careful one, and careful is
+   cheap. The evaluation is honest, the trace is honest, the audit record is honest — and every
+   one of them is honest about a forged law. *"Nothing in this sandbox can tell you that answer
+   is wrong. The pack says clear, and the pack is a file this agent can write."*
+
+2. **Ask the desk the same question.** Same pack id, same facts, same evidence:
+
+   ```bash
+   attest decide sanctions-screening \
+     --facts requests/desk-facts-screening.json \
+     --evidence requests/desk-evidence-screening.json
+   ```
+
+   **match** — with a receipt: authority, `keyId`, `resultDigest`, and the disposition itself
+   signed as the artifact. The desk evaluated against its own copy of this project, baked into
+   the gateway container from the checkout the image was built from. The forged pack is two
+   directories away and completely irrelevant to it.
+
+   Show the receipted judgment: `jq . attested/decision.json` — the pack id and version, the
+   facts as asked, the §8.3 disposition, the desk's own project name.
+
+   **Stage line:** *"the copy you can edit is not the copy that judges. That is the wall."*
+
+3. **Restore** before moving on — in the sandbox terminal, from the sandbox's own read-only
+   copy of the reviewed tree (the same image bytes the desk holds, root-owned here so nothing
+   in this container can edit them):
+   `cp /usr/local/share/desk/enterprise-demo/packs/sanctions-screening.pack.json packs/`
+   — an inert copy repairs the working copy, which is the act's thesis running in reverse.
+   (From the host, `./scripts/reset-demo.sh` does it too. Plain `git checkout` does not work
+   inside the sandbox — `/projects` carries no repository.)
+
+The honest bound, if asked: the desk's law is whatever tree the image was built from, and it
+updates only by rebuilding — so it is as reviewed as your build discipline (hence the reset
+before every build, above). Its receipt proves byte-lineage of the *decision*, not the truth
+of the facts — those are still the caller's claims. What it removes is the one thing the sandbox
+could otherwise do silently: change the law and get an answer that looks the same.
+
+**Act 6 fallbacks**: desk unreachable → `docker compose up -d --force-recreate gateway` (bare
+`restart` cannot rejoin a recreated namespace); the desk's book survives that, it is a host
+mount. Forgot to restore the forged pack → repeat beat 3's `cp` in the sandbox, or
+`./scripts/reset-demo.sh` from the host; `jpack packs test` in the sandbox then passes again,
+which is also how you prove the restore landed. `attest decide` exiting 3 (NO DECISION) means
+*this run's own* receipt or artifact failed verification — a store that lost its registry, or
+one wiped under a live gateway; earlier acts' tampering cannot cause it, because each decide
+mints its own session and the verdict is scoped to it. Recover with `./scripts/reset-demo.sh`
+(which recreates the gateway against the empty store) and rerun. If the local evaluation in
+beat 1 comes back *unresolved (conflict)* instead of clear, only the first sed landed — both
+rules fire; run the second `-e` too. If it refuses another way, check `grep -n '"value"'
+packs/sanctions-screening.pack.json` against the two rule thresholds.
+
 ## Fallbacks
 
 - **Agent reports an unsupported configVersion — or reaches for an edit to `jpack.json`**
   → the running container predates the checkout (a rebuild landed but the stack kept the
-  old image). Fix the sandbox, never the config: `docker compose up -d --build`, then
-  `docker compose up -d --force-recreate gateway`. An evaluation obtained by editing the
+  old image). Fix the sandbox, never the config: `./scripts/reset-demo.sh` first (a build
+  copies the working tree into the decision desk — never bake a mid-act forgery), then
+  `docker compose up -d --build`, then `docker compose up -d --force-recreate gateway`. An evaluation obtained by editing the
   project's declarations is Act 4b's forgery lesson wearing different clothes — and it
   writes no record. (Observed live: an agent sed'd the version down, evaluated, and
   reverted; the microagent now forbids it, and jpack ≥0.12.0 refusals name the upgrade.)

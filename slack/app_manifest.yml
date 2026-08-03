@@ -1,0 +1,80 @@
+# Slack app manifest for the judgment-pack self-serve demo.
+#
+# Create the app from this file: api.slack.com/apps → Create New App →
+# "From a manifest" → pick the workspace → paste this YAML.
+#
+# EVERY request_url below is a PLACEHOLDER (https://example.invalid/…) and
+# must be replaced with the URL slack/deploy/deploy.sh prints — step 7 of
+# slack/SETUP.md, which is the same URL in all three places.
+#
+# One wrinkle worth knowing before you paste: Slack CHALLENGES the Event
+# Subscriptions request_url the moment you save it, and nothing answers at
+# example.invalid yet, so expect creation to be refused. The recovery is
+# SETUP.md step 1, in two stages: delete the SINGLE line marked
+# "DELETE-IF-REFUSED" below (bot_events stays); if it is still refused, delete
+# the whole event_subscriptions block. Either way you add the real URL — and
+# any missing bot events — in SETUP.md step 7.1, with the service running.
+# The interactivity and slash-command URLs are not challenged, so they can
+# stay as placeholders until then.
+display_information:
+  name: Judgment Pack Demo
+  description: Run the whole judgment-pack demo in Slack — real evaluations, real refusals.
+  background_color: "#1f2933"
+  long_description: |
+    A self-serve demo of judgment packs: policy as reviewed code, judgment as a deterministic
+    artifact, and escalation rather than hallucination when something is unknown.
+
+    Pick a use case and the app runs it for real in your own scratch copy of the demo project:
+    judge three vendor-onboarding requests through one reviewed pack (a clean approval, a hard
+    stop, and an honest escalation); author a policy live and watch the validator — not the model
+    — decide whether the draft is a pack; acquire a sanctions screening through a signing desk,
+    then forge the stored artifact and watch verification refuse it and withhold the evaluation;
+    and read the audit trail your own choices wrote, then replay a decision byte for byte.
+
+    The boundary is the point: the runtime evaluates the pack and produces the disposition, and a
+    model is used only to narrate what the runtime decided and to draft documents a validator then
+    judges. Nothing the model says changes a disposition.
+
+features:
+  app_home:
+    home_tab_enabled: true
+    messages_tab_enabled: true
+    messages_tab_read_only_enabled: false
+  bot_user:
+    display_name: Judgment Pack Demo
+    always_online: true
+  slash_commands:
+    - command: /jpack
+      # <<< PLACEHOLDER — replace with https://<your-cloud-run-url>/slack/events
+      url: https://example.invalid/slack/events
+      description: Open the judgment-pack demo menu
+      usage_hint: "[judge|author|attested|book|about]"
+      should_escape: false
+
+oauth_config:
+  scopes:
+    bot:
+      # The minimum this app can work with, and nothing beyond it:
+      - chat:write      # post the flows into a DM or channel
+      - im:write        # open the DM to welcome a new member
+      - im:history      # read the messages a user sends the app in that DM
+      - users:read      # resolve the team_join event's user
+      - commands        # the /jpack slash command
+      # No files:*, no channels:history, no users:read.email — the app never
+      # reads a channel it was not spoken to in, and stores no profile data.
+
+settings:
+  event_subscriptions:
+    # <<< PLACEHOLDER — DELETE-IF-REFUSED, then add the real URL in SETUP.md step 7
+    request_url: https://example.invalid/slack/events
+    bot_events:
+      - team_join          # a new member: DM them the welcome and the menu
+      - app_home_opened    # the App Home tab: menu, progress, and About
+      - message.im         # direct messages: route into the active flow
+  interactivity:
+    is_enabled: true
+    # <<< PLACEHOLDER — replace with https://<your-cloud-run-url>/slack/events
+    request_url: https://example.invalid/slack/events
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false

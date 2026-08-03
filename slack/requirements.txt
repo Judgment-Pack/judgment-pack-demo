@@ -1,0 +1,5 @@
+# Two dependencies, both pinned. Everything else the app uses is stdlib —
+# the demo engine is binaries (jpack, gateway) and the demo project's files,
+# not libraries.
+slack-bolt==1.30.0
+google-genai==2.16.0

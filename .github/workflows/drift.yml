@@ -159,4 +159,46 @@ jobs:
             test -s audit/evaluations.jsonl
             grep -q "\"kind\":\"graph-composite\"" audit/evaluations.jsonl
           '
+          # The decision desk (Act 6): the wall between the copy the sandbox can
+          # edit and the copy that judges. Nothing else in CI covers it, and the
+          # property it asserts cannot be checked from inside the sandbox by
+          # construction — only by forging the local law and watching the desk
+          # not move.
+          docker compose exec -T -w /projects/enterprise-demo openhands sh -ec '
+            attest decide sanctions-screening \
+              --facts requests/desk-facts-screening.json \
+              --evidence requests/desk-evidence-screening.json
+            test -s attested/decision.json
+            grep -q "\"outcomeId\": \"match\"" attested/decision.json
+            grep -q "\"kind\": \"outcome\"" attested/decision.json
+
+            # Forge the LOCAL law: redefine "clear" to mean two matches. The
+            # working copy then answers clear to the very facts the desk calls a
+            # match — honestly, from a forged pack.
+            # Two edits, because one leaves both rules firing and the pack
+            # refuses with a conflict — its structure resists a lazy forgery
+            # and not a careful one, which is the point.
+            sed -i -e "s/\"value\": \"0\"/\"value\": \"2\"/" \
+                   -e "s/\"value\": \"1\"/\"value\": \"9\"/" \
+                   packs/sanctions-screening.pack.json
+            jpack experimental evaluate --pack-id sanctions-screening \
+              --facts requests/desk-facts-screening.json \
+              --evidence requests/desk-evidence-screening.json \
+              --format json | grep -q "\"outcomeId\":\"clear\"" \
+              || { echo "::error::the local forge did not flip the answer; Act 6 beat 1 is stale"; exit 1; }
+
+            # The desk is unmoved: it never reads this tree.
+            rm -f attested/decision.json
+            attest decide sanctions-screening \
+              --facts requests/desk-facts-screening.json \
+              --evidence requests/desk-evidence-screening.json
+            grep -q "\"outcomeId\": \"match\"" attested/decision.json \
+              || { echo "::error::the desk followed the forged local law"; exit 1; }
+
+            cp /usr/local/share/desk/enterprise-demo/packs/sanctions-screening.pack.json packs/
+            jpack experimental evaluate --pack-id sanctions-screening \
+              --facts requests/desk-facts-screening.json \
+              --evidence requests/desk-evidence-screening.json \
+              --format json | grep -q "\"outcomeId\":\"match\""
+          '
           docker compose down

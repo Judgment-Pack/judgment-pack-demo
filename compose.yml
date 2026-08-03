@@ -58,6 +58,12 @@ services:
       - ./gateway-state/private:/private
       - ./gateway-state/pin:/gateway-pin
       - ./gateway-state/public:/gateway
+      # The decision desk's own book, on the gateway service ONLY — the sandbox
+      # never mounts it, so the desk's record of what it decided is as far out
+      # of the agent's reach as the law it decided under. Without this the book
+      # lives in the container's writable layer and the force-recreate the
+      # recovery notes push everywhere destroys it.
+      - ./gateway-state/desk-audit:/usr/local/share/desk/enterprise-demo/audit
     restart: unless-stopped
 
   # Oneshot: registers the jpack MCP server in agent-canvas settings on
