@@ -106,6 +106,11 @@ jobs:
           # back a credential that lives minutes.
           workload_identity_provider: ${{ vars.WIF_PROVIDER }}
           service_account: ${{ vars.DEPLOY_SA }}
+          # The quota project the credential bills API calls to. Without it,
+          # `gcloud builds submit`'s storage preflight fails USER_PROJECT_DENIED
+          # no matter what the deployer is granted — the call has no project to
+          # count against, not too few roles on this one.
+          project_id: ${{ vars.PROJECT_ID }}
 
       - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
 
