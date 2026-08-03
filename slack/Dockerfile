@@ -88,7 +88,7 @@ USER app
 
 ENV DEMO_PROJECT=/opt/judgment-pack/enterprise-demo \
     SESSION_ROOT=/tmp \
-    GEMINI_MODEL=gemini-3.1-pro-preview \
+    GEMINI_MODEL=gemini-3.6-flash \
     GATEWAY_AUTHORITY=gateway:judgment-pack-slack \
     PORT=8080
 

@@ -62,11 +62,11 @@ def test_escape_is_a_pure_function():
 
 def test_every_model_authored_block_names_the_model():
     for block_list in (
-        blocks.narration_blocks("some prose", "gemini-3.1-pro-preview"),
-        blocks.model_blocks("some prose", "gemini-3.1-pro-preview", label="Host reply"),
+        blocks.narration_blocks("some prose", "gemini-3.6-flash"),
+        blocks.model_blocks("some prose", "gemini-3.6-flash", label="Host reply"),
     ):
         out = rendered(block_list)
-        assert "gemini-3.1-pro-preview" in out
+        assert "gemini-3.6-flash" in out
         assert "decided nothing" in out
 
 

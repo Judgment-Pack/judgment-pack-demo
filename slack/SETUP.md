@@ -48,9 +48,34 @@ produced by the `jpack` binary in the container, with no key and no network.
 ## 5. Point gcloud at your project
 
 ```bash
-gcloud auth login
+gcloud auth login          # required: an expired token cannot be refreshed by a script
 gcloud config set project <YOUR_PROJECT_ID>
 ```
+
+`gcloud auth login` opens a browser. Every step below fails at the door without it, by design —
+the scripts check for a usable token before they create anything.
+
+Every setting the deployment has — project, region, service name, the model, the instance
+shape — lives in one gitignored file. Copy it once and edit what you care about; an exported
+variable still overrides it, and with no file at all you get the defaults:
+
+```bash
+cp slack/deploy/deploy.env.example slack/deploy/deploy.env
+```
+
+**Prefer a project of its own?** One command creates it, attaches billing, records the id in
+that file, and deploys — this demo runs drafted packs and a signing gateway per user, so its
+own billing line and a single `gcloud projects delete` to erase it are worth the minute:
+
+```bash
+./slack/deploy/new-project.sh                 # id defaults to jpack-slack-demo-<yymmdd>
+./slack/deploy/new-project.sh my-own-id       # or name it yourself
+```
+
+It needs an account allowed to create projects and attach billing (many organizations reserve
+both). If yours does, ask for an empty project and use step 5 as written. With more than one
+open billing account it stops and lists them; re-run with `BILLING_ACCOUNT=<name>`. Then it
+hands off to `deploy.sh` — so skip step 6.
 
 ## 6. Deploy
 
@@ -68,6 +93,18 @@ three secrets **one at a time, with input hidden**, and stores them in Secret Ma
 | `SLACK_BOT_TOKEN` | the `xoxb-…` token from step 2 |
 | `SLACK_SIGNING_SECRET` | the signing secret from step 3 |
 | `GEMINI_API_KEY` | the key from step 4 |
+
+A secret already in Secret Manager is left alone, so re-running is safe. If you cannot type at
+the prompt — CI, or a key already sitting in a file — point `<NAME>_FILE` at it instead:
+
+```bash
+printf %s "$(grep '^GEMINI_KEY=' .env | cut -d= -f2-)" > /tmp/gk && chmod 600 /tmp/gk
+GEMINI_API_KEY_FILE=/tmp/gk ./slack/deploy/deploy.sh
+shred -u /tmp/gk
+```
+
+A file, not an environment variable holding the value: `ps` and `/proc/<pid>/environ` show the
+second one to every process on the machine.
 
 Then it builds the image with Cloud Build (the build fails loudly if the pinned runtime does not
 pass its own conformance corpus, if the gateway commit disagrees with its frozen corpus, or if the

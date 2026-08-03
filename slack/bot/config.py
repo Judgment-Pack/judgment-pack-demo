@@ -19,7 +19,7 @@ from typing import Optional
 
 # The demo's pinned presenter model. The lite models paraphrase instead of
 # reading the payload they are handed.
-DEFAULT_GEMINI_MODEL = "gemini-3.1-pro-preview"
+DEFAULT_GEMINI_MODEL = "gemini-3.6-flash"
 
 # The only variables a demo subprocess inherits. Everything else — every
 # secret this app holds included — is built explicitly per call site by
