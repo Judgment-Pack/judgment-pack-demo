@@ -358,12 +358,31 @@ rule its addressee can rewrite.
      --evidence requests/desk-evidence-screening.json
    ```
 
-   Two matches, and the local copy says **clear**. Note that it took two edits, not one: change
-   only the first and the two rules both fire and the pack refuses with a conflict — the pack's
-   own structure resists a lazy forgery. It does not resist a careful one, and careful is
-   cheap. The evaluation is honest, the trace is honest, the audit record is honest — and every
-   one of them is honest about a forged law. *"Nothing in this sandbox can tell you that answer
-   is wrong. The pack says clear, and the pack is a file this agent can write."*
+   **The lock objects first.** This project is locked (`jpack.lock.json`), so the deciding
+   surface refuses the drifted pack outright — `JPS-LOCK-VERIFY`, `document-drift`, with the
+   steer naming both legitimate exits. The exact live incident that motivated all of this —
+   edit the law, evaluate, revert — now fails at step two. *"Silent tampering stopped being
+   evaluable the day this project got its lock."*
+
+   Note that it took two edits, not one: change only the first and both rules fire and the
+   pack refuses with a conflict — the pack's own structure resists a lazy forgery too.
+
+   **But the lock is evidence, not a wall.** The forger can do what the steer says and declare
+   the amendment:
+
+   ```bash
+   jpack packs lock
+   jpack experimental evaluate --pack-id sanctions-screening \
+     --facts requests/desk-facts-screening.json \
+     --evidence requests/desk-evidence-screening.json
+   ```
+
+   Now two matches say **clear** — honestly, from a forged, re-locked law, and the only trace
+   is a lock diff in the working tree. The evaluation is honest, the trace is honest, the
+   audit record is honest (`reviewed: true`, against the forger's own lock!) — every one of
+   them honest about a forged law. *"Inside one write domain, the lock can only make tampering
+   leave tracks. It cannot make it stop working. For that you need a copy the forger cannot
+   reach."*
 
 2. **Ask the desk the same question.** Same pack id, same facts, same evidence:
 
@@ -385,11 +404,17 @@ rule its addressee can rewrite.
 
 3. **Restore** before moving on — in the sandbox terminal, from the sandbox's own read-only
    copy of the reviewed tree (the same image bytes the desk holds, root-owned here so nothing
-   in this container can edit them):
-   `cp /usr/local/share/desk/enterprise-demo/packs/sanctions-screening.pack.json packs/`
+   in this container can edit them), law and lock together:
+
+   ```bash
+   cp /usr/local/share/desk/enterprise-demo/packs/sanctions-screening.pack.json packs/
+   cp /usr/local/share/desk/enterprise-demo/jpack.lock.json .
+   ```
+
    — an inert copy repairs the working copy, which is the act's thesis running in reverse.
-   (From the host, `./scripts/reset-demo.sh` does it too. Plain `git checkout` does not work
-   inside the sandbox — `/projects` carries no repository.)
+   (Restoring only the pack would leave the forger's lock pinning forged bytes, and the next
+   deciding evaluation would refuse. From the host, `./scripts/reset-demo.sh` restores both.
+   Plain `git checkout` does not work inside the sandbox — `/projects` carries no repository.)
 
 The honest bound, if asked: the desk's law is whatever tree the image was built from, and it
 updates only by rebuilding — so it is as reviewed as your build discipline (hence the reset
