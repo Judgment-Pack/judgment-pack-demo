@@ -7,7 +7,7 @@
 #     --repo Judgment-Pack/judgment-pack-runtime
 
 ARG AGENT_CANVAS_VERSION=1.6.1
-ARG JUDGMENT_PACK_VERSION=0.12.0
+ARG JUDGMENT_PACK_VERSION=0.13.0
 # The attestation gateway and the derivation rule have no release channels yet,
 # so both are pinned by commit and built from source. When the gateway cuts a
 # release, GATEWAY_REF becomes an attested image pin like the runtime's above.

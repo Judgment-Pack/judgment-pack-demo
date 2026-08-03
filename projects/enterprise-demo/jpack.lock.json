@@ -1,0 +1,30 @@
+{
+  "lockVersion": "1",
+  "config": {
+    "digest": "sha256:7f718eb8b101c3440c658e6a8ee506d2dcdd6b9bf77fcab52f5762766b73267a"
+  },
+  "packs": {
+    "expense-approval": {
+      "path": "packs/expense-approval.pack.json",
+      "digest": "sha256:1459dafa22ff0cafc17ef495d44036df4141d4246c2cc9fc86857c2eae7c0e75"
+    },
+    "intake-triage": {
+      "path": "packs/data-request-intake-triage.pack.json",
+      "digest": "sha256:5bdf53e5c283b5a7c7a04373cfa66a488b021c1e098254424c0de7a963ea8aca"
+    },
+    "sanctions-screening": {
+      "path": "packs/sanctions-screening.pack.json",
+      "digest": "sha256:d587abe5c247fbcf0b890222792eadb18b22837d9555dbd1ef1fd15d015a4ea0"
+    },
+    "vendor-onboarding": {
+      "path": "packs/vendor-onboarding.pack.json",
+      "digest": "sha256:f31d52565e10b012ff93e58396c36dd9a30e3e2cb9533cf34ecb2753b8d8b32d"
+    }
+  },
+  "graphs": {
+    "vendor-onboarding-flow": {
+      "path": "graphs/vendor-onboarding.graph.json",
+      "digest": "sha256:f6fde1160bd6234ab7ed301bc3ce44977783d9f02d30ca358733810ee458fe12"
+    }
+  }
+}

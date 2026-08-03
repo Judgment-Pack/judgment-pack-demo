@@ -42,6 +42,8 @@ jobs:
         run: |
           jpack packs validate
           jpack packs test
+          # The reviewed-set lock (ADR-0019): the committed law must match its lock.
+          jpack packs verify
 
       - name: Generated graph inputs are current
         # graphs/inputs-*.json are DERIVED from vendor-onboarding.rows.json, which
@@ -170,22 +172,35 @@ jobs:
             grep -q "\"outcomeId\": \"match\"" attested/decision.json
             grep -q "\"kind\": \"outcome\"" attested/decision.json
 
-            # Forge the LOCAL law: redefine "clear" to mean two matches. The
-            # working copy then answers clear to the very facts the desk calls a
-            # match — honestly, from a forged pack.
+            # Forge the LOCAL law: redefine "clear" to mean two matches.
             # Two edits, because one leaves both rules firing and the pack
             # refuses with a conflict — its structure resists a lazy forgery
             # and not a careful one, which is the point.
             sed -i -e "s/\"value\": \"0\"/\"value\": \"2\"/" \
                    -e "s/\"value\": \"1\"/\"value\": \"9\"/" \
                    packs/sanctions-screening.pack.json
+
+            # Layer 1 — the LOCK (ADR-0019): with this project locked, the
+            # deciding surface refuses the drifted declared pack outright.
+            # Silent tampering is no longer evaluable locally.
+            if jpack experimental evaluate --pack-id sanctions-screening \
+              --facts requests/desk-facts-screening.json \
+              --evidence requests/desk-evidence-screening.json >/tmp/forged.out 2>&1; then
+              echo "::error::a drifted declared pack evaluated; the lock did not refuse"; exit 1
+            fi
+            grep -q "document-drift" /tmp/forged.out \
+              || { echo "::error::the refusal did not name document-drift"; cat /tmp/forged.out; exit 1; }
+
+            # Layer 2 — the lock is evidence, not a wall: the forger re-locks
+            # (the documented limit) and the forged copy now answers clear.
+            jpack packs lock >/dev/null
             jpack experimental evaluate --pack-id sanctions-screening \
               --facts requests/desk-facts-screening.json \
               --evidence requests/desk-evidence-screening.json \
               --format json | grep -q "\"outcomeId\":\"clear\"" \
-              || { echo "::error::the local forge did not flip the answer; Act 6 beat 1 is stale"; exit 1; }
+              || { echo "::error::the re-locked forge did not flip the answer"; exit 1; }
 
-            # The desk is unmoved: it never reads this tree.
+            # Layer 3 — the DESK is unmoved: it never reads this tree.
             rm -f attested/decision.json
             attest decide sanctions-screening \
               --facts requests/desk-facts-screening.json \
@@ -193,7 +208,13 @@ jobs:
             grep -q "\"outcomeId\": \"match\"" attested/decision.json \
               || { echo "::error::the desk followed the forged local law"; exit 1; }
 
+            # Restore from the read-only baked copy, re-lock, and prove the
+            # regenerated lock is byte-identical to the reviewed one the desk
+            # carries — determinism closing the loop.
             cp /usr/local/share/desk/enterprise-demo/packs/sanctions-screening.pack.json packs/
+            jpack packs lock >/dev/null
+            diff jpack.lock.json /usr/local/share/desk/enterprise-demo/jpack.lock.json \
+              || { echo "::error::the restored lock differs from the reviewed lock"; exit 1; }
             jpack experimental evaluate --pack-id sanctions-screening \
               --facts requests/desk-facts-screening.json \
               --evidence requests/desk-evidence-screening.json \
