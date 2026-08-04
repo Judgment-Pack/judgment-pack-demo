@@ -29,6 +29,24 @@ ACTION_STEP = "jp:step:"  # + flow id + ":" + token
 TRUNCATED = "\n… (truncated for Slack; the full record is in your session)"
 
 
+# Whether "Talk to a human" buttons render. Set once at boot from the
+# presence of a triage channel: a button that promises a person must have
+# somewhere for the note to land.
+_HUMAN_HANDOFF = False
+
+
+def configure_human_handoff(enabled):
+    global _HUMAN_HANDOFF
+    _HUMAN_HANDOFF = bool(enabled)
+
+
+def human_button():
+    """The path to a person, or None when none is configured."""
+    if not _HUMAN_HANDOFF:
+        return None
+    return button("Talk to a human", "jp:human")
+
+
 def truncate(text, limit=SECTION_LIMIT):
     """Cut to fit, and say so — a silently shortened payload is a lie."""
     text = "" if text is None else str(text)
@@ -108,6 +126,9 @@ def menu_blocks(catalogue, completed, intro=None):
         for index, flow in enumerate(catalogue, start=1)
     ]
     buttons.append(button("About this demo", ACTION_ABOUT))
+    human = human_button()
+    if human:
+        buttons.append(human)
     # Slack allows at most five elements per actions block.
     for start in range(0, len(buttons), 5):
         blocks.append(actions(buttons[start:start + 5]))
@@ -143,6 +164,9 @@ def next_steps_blocks(catalogue, completed, finished_flow_title):
         blocks.append(section(content.ALL_DONE))
         buttons = [button("Run one again", ACTION_MENU)]
     buttons.append(button("About this demo", ACTION_ABOUT))
+    human = human_button()
+    if human:
+        buttons.append(human)
     for start in range(0, len(buttons), 5):
         blocks.append(actions(buttons[start:start + 5]))
     return blocks
@@ -160,6 +184,9 @@ def about_blocks(catalogue=None, completed=None):
     blocks.append(divider())
     blocks.append(section(content.ABOUT_INVITE))
     blocks.append(context(content.BOUNDARY))
+    human = human_button()
+    if human:
+        blocks.append(actions([human]))
     if catalogue is not None:
         blocks.append(divider())
         blocks.extend(menu_blocks(catalogue, completed or set()))

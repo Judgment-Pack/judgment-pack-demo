@@ -78,6 +78,12 @@ class Config:
     demo_project: str = "/opt/judgment-pack/enterprise-demo"
     gateway_authority: str = "gateway:judgment-pack-slack"
 
+    # --- The path to a human ----------------------------------------------
+    # A private channel id the lead modal posts into. Unset, the "Talk to a
+    # human" buttons do not render: a promise with no recipient is worse
+    # than no promise.
+    triage_channel: Optional[str] = None
+
     # --- Where session metadata lives -------------------------------------
     # "memory" (default) forgets everything when this process ends. "firestore"
     # makes a user's PROGRESS durable across restarts; it does not make the
@@ -137,6 +143,7 @@ class Config:
             ),
             demo_project=get("DEMO_PROJECT", "/opt/judgment-pack/enterprise-demo"),
             gateway_authority=get("GATEWAY_AUTHORITY", "gateway:judgment-pack-slack"),
+            triage_channel=env.get("TRIAGE_CHANNEL") or None,
             state_backend=get("STATE_BACKEND", "memory"),
             firestore_collection=get("FIRESTORE_COLLECTION", "slack-demo-sessions"),
             firestore_project=env.get("FIRESTORE_PROJECT") or env.get("GOOGLE_CLOUD_PROJECT") or None,
