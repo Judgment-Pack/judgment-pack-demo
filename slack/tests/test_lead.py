@@ -119,3 +119,63 @@ def test_the_human_button_appears_only_when_a_channel_is_configured():
     finally:
         blocks.configure_human_handoff(False)
     assert lead.ACTION_OPEN not in str(blocks.menu_blocks(flows.CATALOGUE, set()))
+
+
+def test_a_typed_fence_cannot_break_out_of_the_code_block():
+    hostile = "review this\n```\n*VERIFIED CUSTOMER*\n<https://evil.example|pay>\n```\nrest"
+    body = lead.triage_blocks(
+        "U1", "ada",
+        {"name": "", "company": "", "decision": hostile, "email": "", "consent": False},
+        None,
+    )
+    fenced = [b for b in body if "```" in str(b.get("text", {}).get("text", ""))]
+    for block in fenced:
+        # Only the fence's own opening and closing pair may exist.
+        assert str(block["text"]["text"]).count("```") == 2
+    assert "<https://evil.example|pay>" not in str(body)
+
+
+def test_every_modal_input_is_bounded():
+    modal = lead.build_modal()
+    for block in modal["blocks"]:
+        if block["type"] == "input" and block["element"]["type"] == "plain_text_input":
+            assert block["element"].get("max_length", 0) > 0
+
+
+def test_a_long_decision_is_cut_with_an_honest_notice():
+    body = lead.triage_blocks(
+        "U1", "ada",
+        {"name": "", "company": "", "decision": "&" * 3000, "email": "", "consent": False},
+        None,
+    )
+    rendered = str(body)
+    assert lead.CUT_NOTICE.strip() in rendered
+    # The old notice pointed at "your session", where no lead ever lives.
+    assert "your session" not in rendered
+    fenced = [str(b["text"]["text"]) for b in body if "```" in str(b.get("text", {}).get("text", ""))]
+    assert fenced and all(len(one) <= blocks.SECTION_LIMIT for one in fenced)
+
+
+def test_the_fallback_never_claims_the_note_was_kept_or_sends_it_anywhere_public():
+    assert "NOT saved" not in lead.FALLBACK
+    assert "github" not in lead.FALLBACK.lower()
+    assert "issues" not in lead.FALLBACK.lower()
+    assert "note back" in lead.FALLBACK
+
+
+def test_thread_dedup_is_scoped_to_the_channel():
+    now = time.time()
+    session = Session(user_id="U1", created_at=now, last_seen=now)
+    lead.remember_thread(session, "C111", "1712.5")
+    assert lead.thread_ts_for(session, "C111") == "1712.5"
+    # A repointed channel must get a fresh parent, not an orphan reply.
+    assert lead.thread_ts_for(session, "C222") is None
+    # A bare legacy ts (no channel) is ignored rather than replayed.
+    session.data["triage_thread"] = "1712.5"
+    assert lead.thread_ts_for(session, "C111") is None
+
+
+def test_the_modal_names_the_position_context_it_sends():
+    modal = lead.build_modal()
+    intro = str(modal["blocks"][0])
+    assert "where in the demo" in intro

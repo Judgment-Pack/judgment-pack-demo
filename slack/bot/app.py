@@ -18,7 +18,6 @@ Request handling shape, and why:
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 import os
 import re
@@ -576,35 +575,52 @@ def on_lead(ack, body, client):
 
 
 def _deliver_lead(client, user_id, username, view):
-    """Post the lead to the triage channel, or refuse to lose it quietly.
+    """Post the lead to the triage channel, or hand the note back.
 
-    Delivery failure DMs the user a plain fallback naming where to file the
-    note, and the full payload goes to the error log so the lead survives
-    somewhere even then. Repeat notes from the same user thread under their
-    first, so the channel stays a queue instead of a pile.
+    On failure NOTHING the user typed is stored — not in a log, not in the
+    session: the note is returned to its sender in the DM, which keeps the
+    fallback copy in the one place the user already controls, and the error
+    log records only sizes. Repeat notes thread under the same user's first
+    (channel-scoped, so a repointed channel gets a fresh parent), and the
+    session write happens under the turn lock or not at all — a race with a
+    live turn is worth less than the dedup.
     """
     parsed = lead.parse_submission(view)
     session = SESSIONS.get(user_id, create=False)
-    thread_ts = session.data.get("triage_ts") if session is not None else None
+    channel = CONFIG.triage_channel
+    thread_ts = lead.thread_ts_for(session, channel)
     try:
         posted = client.chat_postMessage(
-            channel=CONFIG.triage_channel,
+            channel=channel,
             blocks=lead.triage_blocks(user_id, username, parsed, session),
             text="New lead",
             **({"thread_ts": thread_ts} if thread_ts else {}),
         )
-        if session is not None and not thread_ts:
-            session.data["triage_ts"] = posted.get("ts")
-            SESSIONS.save(session)
-    except Exception:  # noqa: BLE001 - a lost lead is the one unacceptable outcome
+    except Exception:  # noqa: BLE001 - the note goes back to its sender
         log.error(
-            "LEAD DELIVERY FAILED for %s — payload follows so nothing is lost:\n%s\n%s",
-            user_id,
-            json.dumps({"username": username, "lead": parsed}, sort_keys=True),
+            "lead delivery failed for %s (name=%dB company=%dB decision=%dB "
+            "email=%s consent=%s):\n%s",
+            _user_tag(user_id),
+            len(parsed["name"]),
+            len(parsed["company"]),
+            len(parsed["decision"]),
+            "yes" if parsed["email"] else "no",
+            parsed["consent"],
             traceback.format_exc(),
         )
-        _notify_dm(client, user_id, lead.FALLBACK.format(issues=content.DEMO_ISSUES))
+        _notify_dm(
+            client,
+            user_id,
+            lead.FALLBACK + "\n```\n" + blocks.escape_mrkdwn(parsed["decision"] or "(empty)")[:2400] + "\n```",
+        )
         return
+    if session is not None and not thread_ts:
+        with TurnLock(session) as held:
+            if held:
+                lead.remember_thread(session, channel, posted.get("ts"))
+                SESSIONS.save(session)
+            else:
+                log.info("skipped the triage-thread dedup for %s: a turn holds the lock", _user_tag(user_id))
     _notify_dm(client, user_id, lead.confirmation_text(parsed))
 
 
