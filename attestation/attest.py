@@ -12,8 +12,10 @@ Verbs (run from a project directory, e.g. /projects/enterprise-demo):
 
   attest check [--stdout]
       GET /registry from the key holder, run the reference verifier under the
-      pinned key, scope the verdict to this session, re-digest the artifact,
-      run the specified derivation rule, and write attested/screening-inputs.json.
+      pinned key, apply gateway SPEC §5a.1's DELIBERATE session-scoped
+      verdict (declared in scoped_verdict, with why), re-digest the
+      artifact, run the specified derivation rule, and write
+      attested/screening-inputs.json.
       Exit 0 derived (resolved or absent), 3 withheld (inputs written with
       evidence "unknown" — the answer, not an error, whether from a failed
       verification or from the rule itself), 4 the verifier could not reach a
@@ -271,10 +273,20 @@ def cmd_screen(args):
 
 
 def scoped_verdict(verdict, session):
+    # Gateway SPEC §5a.1's DELIBERATE session-scoped mode, chosen by name: a
+    # project store here accumulates sessions across beats, and the tampering
+    # this demo stages on purpose leaves earlier sessions dirty — a staged
+    # tamper must not withhold every later screening, which is the exact case
+    # the spec carved the deliberate mode for. The mode's full check list —
+    # own findings all ok and at least one present, registered, seal intact,
+    # chain intact — collapses to the scan below because every finding this
+    # verifier emits carries sessionId and status (the invariant §5a.1
+    # states); a verifier growing a store-level finding that names no session
+    # would need this widened.
     mine = [f for f in verdict.get("findings", []) if f.get("sessionId") == session]
-    bad = sorted({f.get("status") for f in mine if f.get("status") != "ok"})
     if not mine:
         return False, ["no findings for this session (unregistered or missing store)"]
+    bad = sorted({f.get("status") for f in mine if f.get("status") != "ok"})
     if bad:
         return False, bad
     return True, []

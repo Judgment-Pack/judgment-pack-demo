@@ -6,18 +6,25 @@ seal registry, and its own store, so one user's tamper beat cannot withhold
 another user's screening.
 
 The trust boundary the compose demo draws with containers is drawn here with
-directories, and the same rules are honored:
+directories, and the consumer rules are now normative rather than folk
+knowledge — gateway SPEC §5a, "Consuming an attestation" — honored as written:
 
 * the pin is written from `gateway keygen`'s own stdout — the provisioning
-  ceremony — never from `GET /publickey`, because asking the gateway you are
-  about to audit for its own key proves consistency, not authenticity;
+  ceremony — never from `GET /publickey` (§5a.3: consistency, not
+  authenticity);
 * the seal registry lives beside the seed, and the verifier fetches it from
   the key holder over HTTP rather than reading it out of the store under
   audit;
 * verification is delegated to the reference `gateway verify` binary and the
-  verdict is read from its JSON findings, never from an exit code;
+  verdict is read from its JSON findings, never from an exit code (§5a.2) —
+  store-wide and fail-closed (§5a.1), then scoped to the session's own
+  findings;
 * a failed verification derives `screening-record: unknown`. Withholding is
   the answer, not an error.
+
+The per-session-desk design keeps one user's tamper beat from withholding
+another user's screening the honest way: separate stores under separate
+identities, not a session-scoped reading of one shared store.
 
 The model is not in this code path either: `attest` is the demo's own
 deterministic glue, and what lands in the inputs document is a pure function
