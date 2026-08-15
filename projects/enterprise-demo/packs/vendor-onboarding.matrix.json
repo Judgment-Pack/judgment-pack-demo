@@ -4,130 +4,345 @@
     {
       "id": "approve-clean-vendor",
       "facts": {
-        "request": {"type": "new-vendor-onboarding"},
-        "submission": {"completeness": "complete"},
-        "vendor": {"taxFormStatus": "received", "sanctionsScreening": {"status": "clear"}},
-        "engagement": {"annualSpendUsd": "84000"}
+        "request": {
+          "type": "new-vendor-onboarding"
+        },
+        "submission": {
+          "completeness": "complete"
+        },
+        "vendor": {
+          "taxFormStatus": "received",
+          "sanctionsScreening": {
+            "status": "clear"
+          }
+        },
+        "engagement": {
+          "annualSpendUsd": "84000"
+        }
       },
-      "evidenceAvailability": {"sanctions-screening": "present", "tax-form": "present"},
+      "evidenceAvailability": {
+        "sanctions-screening": "present",
+        "tax-form": "present"
+      },
       "supportedExtensions": [],
       "expectedDisposition": {
         "kind": "outcome",
         "outcomeId": "approve",
         "reasons": [],
-        "handoff": {"state": "none"}
+        "handoff": {
+          "state": "none"
+        }
       }
     },
     {
       "id": "request-info-pending-tax-form",
       "facts": {
-        "request": {"type": "new-vendor-onboarding"},
-        "submission": {"completeness": "complete"},
-        "vendor": {"taxFormStatus": "pending", "sanctionsScreening": {"status": "clear"}},
-        "engagement": {"annualSpendUsd": "84000"}
+        "request": {
+          "type": "new-vendor-onboarding"
+        },
+        "submission": {
+          "completeness": "complete"
+        },
+        "vendor": {
+          "taxFormStatus": "pending",
+          "sanctionsScreening": {
+            "status": "clear"
+          }
+        },
+        "engagement": {
+          "annualSpendUsd": "84000"
+        }
       },
-      "evidenceAvailability": {"sanctions-screening": "present", "tax-form": "absent"},
+      "evidenceAvailability": {
+        "sanctions-screening": "present",
+        "tax-form": "absent"
+      },
       "supportedExtensions": [],
       "expectedDisposition": {
         "kind": "unresolved",
-        "reasons": ["missing-required-evidence"],
-        "handoff": {"state": "requested", "triggeredBy": ["missing-required-evidence"]}
+        "reasons": [
+          "missing-required-evidence"
+        ],
+        "handoff": {
+          "state": "requested",
+          "triggeredBy": [
+            "missing-required-evidence"
+          ]
+        }
       }
     },
     {
       "id": "request-info-incomplete-submission",
       "facts": {
-        "request": {"type": "new-vendor-onboarding"},
-        "submission": {"completeness": "incomplete"},
-        "vendor": {"taxFormStatus": "received", "sanctionsScreening": {"status": "clear"}},
-        "engagement": {"annualSpendUsd": "84000"}
+        "request": {
+          "type": "new-vendor-onboarding"
+        },
+        "submission": {
+          "completeness": "incomplete"
+        },
+        "vendor": {
+          "taxFormStatus": "received",
+          "sanctionsScreening": {
+            "status": "clear"
+          }
+        },
+        "engagement": {
+          "annualSpendUsd": "84000"
+        }
       },
-      "evidenceAvailability": {"sanctions-screening": "present", "tax-form": "present"},
+      "evidenceAvailability": {
+        "sanctions-screening": "present",
+        "tax-form": "present"
+      },
       "supportedExtensions": [],
       "expectedDisposition": {
         "kind": "outcome",
         "outcomeId": "request-info",
         "reasons": [],
-        "handoff": {"state": "none"}
+        "handoff": {
+          "state": "none"
+        }
       }
     },
     {
       "id": "reject-forced-on-sanctions-match",
       "facts": {
-        "request": {"type": "new-vendor-onboarding"},
-        "submission": {"completeness": "complete"},
-        "vendor": {"taxFormStatus": "received", "sanctionsScreening": {"status": "match"}},
-        "engagement": {"annualSpendUsd": "84000"}
+        "request": {
+          "type": "new-vendor-onboarding"
+        },
+        "submission": {
+          "completeness": "complete"
+        },
+        "vendor": {
+          "taxFormStatus": "received",
+          "sanctionsScreening": {
+            "status": "match"
+          }
+        },
+        "engagement": {
+          "annualSpendUsd": "84000"
+        }
       },
-      "evidenceAvailability": {"sanctions-screening": "present", "tax-form": "present"},
+      "evidenceAvailability": {
+        "sanctions-screening": "present",
+        "tax-form": "present"
+      },
       "supportedExtensions": [],
       "expectedDisposition": {
         "kind": "outcome",
         "outcomeId": "reject",
         "reasons": [],
-        "handoff": {"state": "none"}
+        "handoff": {
+          "state": "none"
+        }
       }
     },
     {
       "id": "committee-direct-escalation-on-large-spend",
       "facts": {
-        "request": {"type": "new-vendor-onboarding"},
-        "submission": {"completeness": "complete"},
-        "vendor": {"taxFormStatus": "received", "sanctionsScreening": {"status": "clear"}},
-        "engagement": {"annualSpendUsd": "600000"}
+        "request": {
+          "type": "new-vendor-onboarding"
+        },
+        "submission": {
+          "completeness": "complete"
+        },
+        "vendor": {
+          "taxFormStatus": "received",
+          "sanctionsScreening": {
+            "status": "clear"
+          }
+        },
+        "engagement": {
+          "annualSpendUsd": "600000"
+        }
       },
-      "evidenceAvailability": {"sanctions-screening": "present", "tax-form": "present"},
+      "evidenceAvailability": {
+        "sanctions-screening": "present",
+        "tax-form": "present"
+      },
       "supportedExtensions": [],
       "expectedDisposition": {
         "kind": "unresolved",
-        "reasons": ["exception-escalation"],
-        "handoff": {"state": "requested", "triggeredBy": ["exception-escalation"]}
+        "reasons": [
+          "exception-escalation"
+        ],
+        "handoff": {
+          "state": "requested",
+          "triggeredBy": [
+            "exception-escalation"
+          ]
+        }
       }
     },
     {
       "id": "unknown-screening-escalates",
       "facts": {
-        "request": {"type": "new-vendor-onboarding"},
-        "submission": {"completeness": "complete"},
-        "vendor": {"taxFormStatus": "received"},
-        "engagement": {"annualSpendUsd": "84000"}
+        "request": {
+          "type": "new-vendor-onboarding"
+        },
+        "submission": {
+          "completeness": "complete"
+        },
+        "vendor": {
+          "taxFormStatus": "received"
+        },
+        "engagement": {
+          "annualSpendUsd": "84000"
+        }
       },
-      "evidenceAvailability": {"sanctions-screening": "present", "tax-form": "present"},
+      "evidenceAvailability": {
+        "sanctions-screening": "present",
+        "tax-form": "present"
+      },
       "supportedExtensions": [],
       "expectedDisposition": {
         "kind": "unresolved",
-        "reasons": ["unknown"],
-        "handoff": {"state": "requested", "triggeredBy": ["unknown"]}
+        "reasons": [
+          "unknown"
+        ],
+        "handoff": {
+          "state": "requested",
+          "triggeredBy": [
+            "unknown"
+          ]
+        }
       }
     },
     {
       "id": "ordered-comparison-number-trap-escalates",
       "facts": {
-        "request": {"type": "new-vendor-onboarding"},
-        "submission": {"completeness": "complete"},
-        "vendor": {"taxFormStatus": "received", "sanctionsScreening": {"status": "clear"}},
-        "engagement": {"annualSpendUsd": 84000}
+        "request": {
+          "type": "new-vendor-onboarding"
+        },
+        "submission": {
+          "completeness": "complete"
+        },
+        "vendor": {
+          "taxFormStatus": "received",
+          "sanctionsScreening": {
+            "status": "clear"
+          }
+        },
+        "engagement": {
+          "annualSpendUsd": 84000
+        }
       },
-      "evidenceAvailability": {"sanctions-screening": "present", "tax-form": "present"},
+      "evidenceAvailability": {
+        "sanctions-screening": "present",
+        "tax-form": "present"
+      },
       "supportedExtensions": [],
       "expectedDisposition": {
         "kind": "unresolved",
-        "reasons": ["unknown"],
-        "handoff": {"state": "requested", "triggeredBy": ["unknown"]}
+        "reasons": [
+          "unknown"
+        ],
+        "handoff": {
+          "state": "requested",
+          "triggeredBy": [
+            "unknown"
+          ]
+        }
       }
     },
     {
       "id": "not-applicable-wrong-request-type",
       "facts": {
-        "request": {"type": "software-license-renewal"},
-        "submission": {"completeness": "complete"}
+        "request": {
+          "type": "software-license-renewal"
+        },
+        "submission": {
+          "completeness": "complete"
+        }
       },
-      "evidenceAvailability": {"sanctions-screening": "present", "tax-form": "present"},
+      "evidenceAvailability": {
+        "sanctions-screening": "present",
+        "tax-form": "present"
+      },
       "supportedExtensions": [],
       "expectedDisposition": {
         "kind": "not-applicable",
-        "reasons": ["not-applicable"],
-        "handoff": {"state": "requested", "triggeredBy": ["not-applicable"]}
+        "reasons": [
+          "not-applicable"
+        ],
+        "handoff": {
+          "state": "requested",
+          "triggeredBy": [
+            "not-applicable"
+          ]
+        }
+      }
+    },
+    {
+      "id": "boundary-spend-exactly-at-committee-threshold",
+      "facts": {
+        "request": {
+          "type": "new-vendor-onboarding"
+        },
+        "submission": {
+          "completeness": "complete"
+        },
+        "vendor": {
+          "taxFormStatus": "received",
+          "sanctionsScreening": {
+            "status": "clear"
+          }
+        },
+        "engagement": {
+          "annualSpendUsd": "250000"
+        }
+      },
+      "evidenceAvailability": {
+        "sanctions-screening": "present",
+        "tax-form": "present",
+        "business-justification": "present"
+      },
+      "supportedExtensions": [],
+      "expectedDisposition": {
+        "kind": "unresolved",
+        "reasons": [
+          "exception-escalation"
+        ],
+        "handoff": {
+          "state": "requested",
+          "triggeredBy": [
+            "exception-escalation"
+          ]
+        }
+      }
+    },
+    {
+      "id": "boundary-spend-just-below-committee-threshold",
+      "facts": {
+        "request": {
+          "type": "new-vendor-onboarding"
+        },
+        "submission": {
+          "completeness": "complete"
+        },
+        "vendor": {
+          "taxFormStatus": "received",
+          "sanctionsScreening": {
+            "status": "clear"
+          }
+        },
+        "engagement": {
+          "annualSpendUsd": "249999.99"
+        }
+      },
+      "evidenceAvailability": {
+        "sanctions-screening": "present",
+        "tax-form": "present",
+        "business-justification": "present"
+      },
+      "supportedExtensions": [],
+      "expectedDisposition": {
+        "kind": "outcome",
+        "outcomeId": "approve",
+        "reasons": [],
+        "handoff": {
+          "state": "none"
+        }
       }
     }
   ]
