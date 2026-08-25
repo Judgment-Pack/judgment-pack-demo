@@ -29,7 +29,7 @@ The image carries the demo engine, all of it pinned:
 
 | piece | where it comes from | proof at build time |
 |---|---|---|
-| `jpack` | `ghcr.io/judgment-pack/judgment-pack:0.13.0`, multi-stage COPY | `jpack spec test-conformance --quiet`, then `packs validate` **and `packs verify`** against the baked project — the second catches a runtime that predates the project's reviewed-set lock |
+| `jpack` | `ghcr.io/judgment-pack/judgment-pack:0.19.0`, multi-stage COPY | `jpack spec test-conformance --quiet`, then `packs validate` **and `packs verify`** against the baked project — the second catches a runtime that predates the project's reviewed-set lock |
 | `gateway` | built from the pinned commit (`GATEWAY_REF`) | `gateway conform` replays its frozen corpus |
 | derivation rule | built from the pinned commit (`DERIVATION_REF`) | `agreement.py` + its unit corpus |
 | `enterprise-demo` | this repository, baked read-only | copied per session, never edited in place |

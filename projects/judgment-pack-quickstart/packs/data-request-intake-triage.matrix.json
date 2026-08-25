@@ -1,5 +1,5 @@
 {
- "matrixVersion": "1",
+ "matrixVersion": "2",
  "cases": [
   {
    "id": "clarify-incomplete",
@@ -47,7 +47,8 @@
     "handoff": {
      "state": "none"
     }
-   }
+   },
+   "expectedHandoffTarget": null
   },
   {
    "id": "required-evidence-absent",
@@ -75,6 +76,10 @@
       "missing-required-evidence"
      ]
     }
+   },
+   "expectedHandoffTarget": {
+    "kind": "human-role",
+    "name": "Intake reviewer"
    }
   }
  ]

@@ -1,5 +1,5 @@
 {
-  "graphMatrixVersion": "1",
+  "graphMatrixVersion": "2",
   "cases": [
     {
       "id": "clear-approves",
@@ -42,6 +42,7 @@
           "state": "none"
         }
       },
+      "expectedHandoffTarget": null,
       "expectedNodes": {
         "screening": {
           "kind": "outcome",
@@ -146,6 +147,10 @@
           ]
         }
       },
+      "expectedHandoffTarget": {
+        "kind": "human-role",
+        "name": "Vendor risk committee"
+      },
       "expectedNodes": {
         "screening": {
           "kind": "unresolved",
@@ -170,6 +175,16 @@
               "unknown"
             ]
           }
+        }
+      },
+      "expectedNodeHandoffTargets": {
+        "onboarding": {
+          "kind": "human-role",
+          "name": "Vendor risk committee"
+        },
+        "screening": {
+          "kind": "human-role",
+          "name": "Compliance"
         }
       }
     },
@@ -218,6 +233,10 @@
           ]
         }
       },
+      "expectedHandoffTarget": {
+        "kind": "human-role",
+        "name": "Vendor risk committee"
+      },
       "expectedNodes": {
         "screening": {
           "kind": "outcome",
@@ -227,6 +246,9 @@
             "state": "none"
           }
         }
+      },
+      "expectedNodeHandoffTargets": {
+        "screening": null
       }
     }
   ]

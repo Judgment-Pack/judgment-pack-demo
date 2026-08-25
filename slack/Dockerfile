@@ -22,7 +22,7 @@
 # The same release the compose demo pins. It must not lag: this image bakes a
 # project that declares a reviewed-set lock, and a runtime that predates the
 # lock cannot verify it — the build below refuses rather than shipping that.
-ARG JUDGMENT_PACK_VERSION=0.13.0
+ARG JUDGMENT_PACK_VERSION=0.19.0
 # The gateway and the derivation rule have no release channels yet, so both
 # are pinned by commit and built from source — the same pins the compose demo
 # uses. When the gateway cuts a release, GATEWAY_REF becomes an attested image

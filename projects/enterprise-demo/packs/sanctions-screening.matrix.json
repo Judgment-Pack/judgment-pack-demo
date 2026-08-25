@@ -1,5 +1,5 @@
 {
-  "matrixVersion": "1",
+  "matrixVersion": "2",
   "cases": [
     {
       "id": "clear-on-zero-matches",
@@ -56,6 +56,10 @@
             "unknown"
           ]
         }
+      },
+      "expectedHandoffTarget": {
+        "kind": "human-role",
+        "name": "Compliance"
       }
     },
     {
@@ -79,6 +83,10 @@
             "missing-required-evidence"
           ]
         }
+      },
+      "expectedHandoffTarget": {
+        "kind": "human-role",
+        "name": "Compliance"
       }
     },
     {
