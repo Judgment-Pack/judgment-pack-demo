@@ -1,5 +1,5 @@
 {
-  "matrixVersion": "1",
+  "matrixVersion": "2",
   "cases": [
     {
       "id": "approve-clean-vendor",
@@ -69,6 +69,10 @@
             "missing-required-evidence"
           ]
         }
+      },
+      "expectedHandoffTarget": {
+        "kind": "human-role",
+        "name": "Vendor risk committee"
       }
     },
     {
@@ -172,6 +176,10 @@
             "exception-escalation"
           ]
         }
+      },
+      "expectedHandoffTarget": {
+        "kind": "human-role",
+        "name": "Vendor risk committee"
       }
     },
     {
@@ -206,6 +214,10 @@
             "unknown"
           ]
         }
+      },
+      "expectedHandoffTarget": {
+        "kind": "human-role",
+        "name": "Vendor risk committee"
       }
     },
     {
@@ -243,6 +255,10 @@
             "unknown"
           ]
         }
+      },
+      "expectedHandoffTarget": {
+        "kind": "human-role",
+        "name": "Vendor risk committee"
       }
     },
     {
@@ -271,6 +287,10 @@
             "not-applicable"
           ]
         }
+      },
+      "expectedHandoffTarget": {
+        "kind": "human-role",
+        "name": "Vendor risk committee"
       }
     },
     {
@@ -309,6 +329,10 @@
             "exception-escalation"
           ]
         }
+      },
+      "expectedHandoffTarget": {
+        "kind": "human-role",
+        "name": "Vendor risk committee"
       }
     },
     {

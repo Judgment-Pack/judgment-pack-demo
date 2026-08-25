@@ -149,3 +149,8 @@ runs a **decision desk** (`attest decide`): it evaluates against a copy of the p
 into its own container at image build, so the receipted judgment comes from law the sandbox
 cannot reach — the copy you can edit is not the copy that judges. Reset before you rebuild:
 the baked copy is the build context.
+
+## License
+
+Apache License 2.0 — see [LICENSE](LICENSE). The synthetic packs, matrices, and
+fixtures here are demonstration material like everything else in this repository.

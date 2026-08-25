@@ -1,5 +1,5 @@
 {
-  "matrixVersion": "1",
+  "matrixVersion": "2",
   "cases": [
     {
       "id": "reimburse-small-meal",
@@ -21,7 +21,8 @@
         "handoff": {
           "state": "none"
         }
-      }
+      },
+      "expectedHandoffTarget": null
     },
     {
       "id": "deny-gift-cards",
