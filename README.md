@@ -130,7 +130,10 @@ audit directory (`configVersion "3"`), so every evaluation is recorded as a repl
 `audit/evaluations.jsonl` — the decision book Act 5 closes on. The MCP server is seeded
 against this project by default. [`DEMO.md`](projects/enterprise-demo/DEMO.md) is the 6-minute
 script: browse, present the pack as a grounded table, the clean approval,
-the forced reject, and the escalation the honesty rule exists for.
+the forced reject, and the escalation the honesty rule exists for. Act 7 replays a year of
+ledger decisions ([`projects/history-replay`](projects/history-replay)) against a policy drafted
+from the documents with one line moved on purpose, and reads the runtime's history profile as the
+questions it is: which quarter disagrees, and where the cases sit against the moved line.
 
 ### Attested inputs (Act 4)
 
