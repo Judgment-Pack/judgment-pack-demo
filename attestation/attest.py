@@ -79,6 +79,27 @@ INPUTS_FILE = os.path.join("attested", "screening-inputs.json")
 DECISION_FILE = os.path.join("attested", "decision.json")
 REGISTRY_FETCHED = os.path.join("attested", "registry.fetched.jsonl")
 
+# The engine (Act 8): the same gateway in its one-configuration-file form, on
+# its own loopback port with its own identity, store and pin. A write goes
+# through it as an action, refused unless the judgment it cites is in the
+# decision book -- this project's own audit/evaluations.jsonl, which the
+# engine reads where the runtime wrote it.
+ENGINE_URL = os.environ.get("ENGINE_URL", "http://127.0.0.1:8788")
+ENGINE_AUTHORITY = os.environ.get("ENGINE_AUTHORITY", "gateway:enterprise-demo-engine")
+ENGINE_STORE = os.environ.get("ENGINE_STORE", "/engine/store")
+ENGINE_PIN = os.environ.get("ENGINE_PIN", "/engine-pin/pinned.pubkey")
+AUDIT_BOOK = os.environ.get("AUDIT_BOOK", os.path.join("audit", "evaluations.jsonl"))
+VENDOR_FILE = os.path.join("attested", "vendor.json")
+VENDOR_FACTS_FILE = os.path.join("attested", "vendor-facts.json")
+VENDOR_EVIDENCE_FILE = os.path.join("attested", "vendor-evidence.json")
+CITES_FILE = os.path.join("attested", "cites.json")
+ACTION_FILE = os.path.join("attested", "action.json")
+ENGINE_REGISTRY_FETCHED = os.path.join("attested", "engine-registry.fetched.jsonl")
+ENGINE_RECOVERY = (
+    "is the engine up? Recover with:\n"
+    "  docker compose up -d --force-recreate engine"
+)
+
 RECOVERY = (
     "is the gateway up? Recover with:\n"
     "  docker compose up -d --force-recreate gateway\n"
@@ -471,6 +492,286 @@ def cmd_decide(args):
     sys.exit(0)
 
 
+# --- Act 8: the engine, and a write after a person approves ------------------
+
+def bearer(args):
+    """The token that says who is asking: --token, else $ATTEST_TOKEN.
+
+    Minted outside the sandbox, by the stand-in identity provider the engine
+    trusts (`docker compose exec engine issuer mint /private/issuer --subject
+    NAME` on the host). The sandbox holds no key and cannot mint one, which is
+    the point: the agent can propose, and only a person's token can ask.
+    """
+    token = getattr(args, "token", None) or os.environ.get("ATTEST_TOKEN", "")
+    return token.strip()
+
+
+def engine_call(method, path, body=None, token=""):
+    """One request to the engine; returns (status, decoded body).
+
+    A refusal (4xx) is an answer, not a transport failure: the engine names the
+    step of its ladder the request fell at, and the caller reads it.
+    """
+    data = None if body is None else json.dumps(body).encode()
+    request = urllib.request.Request(ENGINE_URL + path, data=data, method=method)
+    if data is not None:
+        request.add_header("Content-Type", "application/json")
+    if token:
+        request.add_header("Authorization", "Bearer " + token)
+    try:
+        with urllib.request.urlopen(request, timeout=120) as response:
+            raw = response.read()
+            return response.status, (json.loads(raw) if raw else {})
+    except urllib.error.HTTPError as error:
+        raw = error.read()
+        try:
+            return error.code, json.loads(raw)
+        except ValueError:
+            return error.code, {"error": raw.decode(errors="replace")}
+    except urllib.error.URLError as error:
+        fail(f"attest: cannot reach the engine at {ENGINE_URL} ({error.reason});",
+             "  " + ENGINE_RECOVERY, code=4)
+
+
+def load_json_file(path, what):
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        fail(f"attest: no readable {path} — {what}")
+
+
+def cmd_read(args):
+    """Read one vendor's record through the engine, with a receipt (ledger 1).
+
+    The engine derives `tickets/live` from the platform's binding and runs the
+    MCP adapter as the platform's own user, which calls the ticket system's
+    `get_vendor` tool; what came back is retained under its digest and signed
+    with the acquisition record -- which tool, through which adapter, when --
+    and the caller the token names. The record carries the onboarding facts as
+    the ticket system filed them; they are written beside the citation so the
+    next beat can judge them and cite this receipt.
+    """
+    vendor_id = args.vendor_id.strip()
+    if not vendor_id:
+        fail("attest: vendor-id must be a non-empty string")
+    token = bearer(args)
+    session = mint_session("act", vendor_id)
+    status, answer = engine_call("POST", "/acquire", {
+        "session": session,
+        "source": "tickets/live",
+        "arguments": {"tool": "get_vendor", "arguments": {"id": vendor_id}},
+    }, token)
+    if status != 200:
+        fail(f"attest: the engine refused the read ({status}): {answer.get('error')}",
+             "  every request to the engine carries a person's token: --token or $ATTEST_TOKEN" if status == 401 else "",
+             code=5)
+    receipt = answer.get("receipt", {})
+    record = (answer.get("result") or {}).get("structuredContent") or {}
+    if record.get("error"):
+        fail(f"attest: the ticket system answered: {record['error']}  (receipted all the same: "
+             f"session {session}, callIndex {receipt.get('callIndex')})", code=5)
+    citation = {"sessionId": receipt.get("sessionId"), "callIndex": receipt.get("callIndex"),
+                "signature": receipt.get("signature")}
+    os.makedirs("attested", exist_ok=True)
+    with open(VENDOR_FILE, "w") as f:
+        json.dump({"vendor": vendor_id, "session": session, "citation": citation,
+                   "receipt": receipt, "record": record, "salts": answer.get("salts")},
+                  f, indent=2, sort_keys=True)
+    with open(VENDOR_FACTS_FILE, "w") as f:
+        json.dump(record.get("facts", {}), f, indent=2, sort_keys=True)
+    with open(VENDOR_EVIDENCE_FILE, "w") as f:
+        json.dump(record.get("evidence", {}), f, indent=2, sort_keys=True)
+    with open(CITES_FILE, "w") as f:
+        json.dump([citation], f, indent=2)
+    acquisition = receipt.get("acquisition", {})
+    caller = receipt.get("caller") or {}
+    say(sys.stdout,
+        f"read      {vendor_id}  {record.get('name', '?')}  status {record.get('status', '?')}",
+        f"          session {session}  callIndex {receipt.get('callIndex')}",
+        f"          authority {receipt.get('authority')}  keyId {receipt.get('keyId')}",
+        f"          resultDigest {receipt.get('resultDigest')}",
+        f"          acquisition: tool get_vendor through {acquisition.get('adapter', {}).get('name')}"
+        f" ({str(acquisition.get('adapter', {}).get('digest', ''))[:19]}…)  observedAt {acquisition.get('observedAt')}",
+        f"          statement: a salted commitment (salt returned, not stored)",
+        f"          caller {caller.get('subject', 'null')}  ({caller.get('issuer', '-')})",
+        "",
+        f"wrote {VENDOR_FILE}, {VENDOR_FACTS_FILE}, {VENDOR_EVIDENCE_FILE}, {CITES_FILE}",
+        "Next: judge the facts and cite this receipt --",
+        "  jpack experimental evaluate --pack-id vendor-onboarding \\",
+        f"    --facts {VENDOR_FACTS_FILE} --evidence {VENDOR_EVIDENCE_FILE} --cites {CITES_FILE}")
+    sys.exit(0)
+
+
+def judgment_citing(citation):
+    """The newest line of the decision book that cites exactly this receipt.
+
+    Returns (line bytes, record) or (None, None). The digest the action claims
+    is the SHA-256 of the line as the verifier takes it: without its newline.
+    """
+    try:
+        with open(AUDIT_BOOK, "rb") as f:
+            lines = f.read().split(b"\n")
+    except OSError:
+        return None, None
+    found = (None, None)
+    for line in lines:
+        line = line.rstrip(b"\r")
+        if not line.strip():
+            continue
+        try:
+            record = json.loads(line)
+        except ValueError:
+            continue
+        if record.get("cites") == [citation]:
+            found = (line, record)
+    return found
+
+
+def cmd_act(args):
+    """Ask the engine to perform a write, as the person the token names.
+
+    The request cites the read's receipt and the judgment that relied on it;
+    the engine holds both -- the receipt in its own store under its own key,
+    the record under the decision book by digest -- before any executor runs,
+    and refuses at the first step that fails, naming it. What it mints is an
+    action receipt: requester, decision, cites, tool, the target's answer.
+    """
+    vendor_id = args.vendor_id.strip()
+    token = bearer(args)
+    vendor = load_json_file(VENDOR_FILE, "run `attest read VENDOR` first")
+    if vendor.get("vendor") != vendor_id:
+        fail(f"attest: {VENDOR_FILE} is {vendor.get('vendor')}'s read, not {vendor_id}'s — "
+             f"run `attest read {vendor_id}` first")
+    citation = vendor["citation"]
+    line, record = judgment_citing(citation)
+    if args.decision:
+        record_digest = args.decision.strip()
+        pack_digest = (record or {}).get("pack", {}).get("digest", "sha256:" + "0" * 64)
+    elif line is None:
+        fail(f"attest: no line of {AUDIT_BOOK} cites this read (session {citation['sessionId']}, "
+             f"callIndex {citation['callIndex']}) — judge first, citing {CITES_FILE}", code=2)
+    else:
+        record_digest = "sha256:" + hashlib.sha256(line).hexdigest()
+        pack_digest = record.get("pack", {}).get("digest", "")
+    arguments = {"id": vendor_id, "status": args.status.strip()}
+    if args.reason:
+        arguments["reason"] = args.reason
+    status, answer = engine_call("POST", "/act", {
+        "session": vendor["session"],
+        "platform": "tickets",
+        "tool": "update_vendor_status",
+        "arguments": arguments,
+        "decision": {"recordDigest": record_digest, "packDigest": pack_digest},
+        "cites": [citation],
+    }, token)
+    if status != 200:
+        # A missing or bad token is refused before the body is read, as any
+        # request to the engine is: the ladder's first step, the requester.
+        step = answer.get("refusedAt") or ("requester" if status == 401 else "?")
+        say(sys.stderr,
+            f"REFUSED   at the {step} step ({status})",
+            f"          {answer.get('error')}",
+            "          nothing was sent to the ticket system and nothing was minted.")
+        sys.exit(5)
+    receipt = answer.get("receipt", {})
+    action = receipt.get("action", {})
+    result = (answer.get("result") or {}).get("structuredContent") or {}
+    # The session is closed here: the read and the action are its two
+    # receipts, and the seal registers their count with the key holder, so
+    # the verifier holds the chain whole and a receipt removed later is missed.
+    sealed_status, sealed = engine_call("POST", "/seal", {"session": vendor["session"]}, token)
+    if sealed_status != 200:
+        fail(f"attest: the action was minted but the session could not be sealed ({sealed_status}): {sealed.get('error')}",
+             "  the receipt is in the store; seal again once whatever is in flight has finished", code=5)
+    os.makedirs("attested", exist_ok=True)
+    with open(ACTION_FILE, "w") as f:
+        json.dump({"vendor": vendor_id, "receipt": receipt, "result": result,
+                   "salts": answer.get("salts"), "sealed": sealed}, f, indent=2, sort_keys=True)
+    requester = action.get("requester") or {}
+    say(sys.stdout,
+        f"acted     {vendor_id} -> {arguments['status']}  (callIndex {receipt.get('callIndex')} of session {receipt.get('sessionId')}, "
+        f"sealed at finalCount {sealed.get('finalCount', '?')})",
+        f"          requester {requester.get('subject')}  ({requester.get('issuer')})",
+        f"          decision  {action.get('decision', {}).get('recordDigest')}",
+        f"          cites     {citation['sessionId']}/{citation['callIndex']}",
+        f"          tool      {action.get('tool', {}).get('name')} on {action.get('tool', {}).get('endpoint')}"
+        f"  via {action.get('adapter', {}).get('name')}  observedAt {action.get('observedAt')}",
+        f"          the ticket system answered: {json.dumps(result, sort_keys=True)}",
+        f"          resultDigest {receipt.get('resultDigest')}  keyId {receipt.get('keyId')}",
+        "",
+        f"wrote {ACTION_FILE}",
+        "The receipt says who asked, which judgment, which receipts, which tool, and",
+        "what came back. It does not say the write was right, and it does not say the",
+        "requester approved it: a token proves who asked. Next: attest chain")
+    sys.exit(0)
+
+
+def cmd_chain(_args):
+    """Verify the engine's store with the decision book: all three ledgers.
+
+    The reference verifier, under the engine's out-of-band pin, with the seal
+    registry fetched from the key holder and the decision-record directory
+    named: every receipt is checked, and an action receipt's decision must
+    resolve to a line of the book by digest and its citations to receipts in
+    the store. Scoped to the read's session when one is on disk.
+    """
+    registry = None
+    try:
+        with urllib.request.urlopen(ENGINE_URL + "/registry", timeout=60) as response:
+            registry = response.read()
+    except urllib.error.URLError as error:
+        fail(f"attest: cannot reach the engine at {ENGINE_URL} ({error.reason});", "  " + ENGINE_RECOVERY, code=4)
+    os.makedirs("attested", exist_ok=True)
+    with open(ENGINE_REGISTRY_FETCHED, "wb") as f:
+        f.write(registry)
+    try:
+        with open(ENGINE_PIN, "rb") as f:
+            pin = f.read()
+    except OSError as error:
+        fail(f"attest: cannot read the engine's pinned public key at {ENGINE_PIN}: {error}")
+    proc = subprocess.run(
+        [GATEWAY_BIN, "verify", ENGINE_STORE, ENGINE_REGISTRY_FETCHED, ENGINE_AUTHORITY,
+         "--decision-records", os.path.dirname(AUDIT_BOOK) or "."],
+        input=pin, capture_output=True)
+    if proc.returncode != 0 and not proc.stdout.strip():
+        fail("attest: NO VERDICT — the verifier could not audit the engine's store at all",
+             f"  {proc.stderr.decode(errors='replace').strip()}", "  " + ENGINE_RECOVERY, code=4)
+    verdict = json.loads(proc.stdout)
+    session = None
+    try:
+        with open(VENDOR_FILE) as f:
+            session = json.load(f).get("session")
+    except (OSError, ValueError):
+        pass
+    findings = verdict.get("findings", [])
+    mine = [f for f in findings if session is None or f.get("sessionId") == session]
+    say(sys.stdout,
+        f"verify    engine store-wide ok={verdict.get('ok')}  (pin {ENGINE_PIN}; registry fetched from the key holder;"
+        f" decision records {os.path.dirname(AUDIT_BOOK) or '.'})",
+        f"          session {session or '(all)'}: {len(mine)} finding(s)")
+    bad = 0
+    for finding in mine:
+        rest = {k: v for k, v in finding.items() if k not in ("sessionId",)}
+        marker = "ok " if finding.get("status") == "ok" else "!! "
+        if finding.get("status") != "ok":
+            bad += 1
+        say(sys.stdout, f"          {marker}{json.dumps(rest, sort_keys=True)}")
+    if session is not None and not mine:
+        say(sys.stdout, "          no findings for this session: unregistered, or the store is gone")
+        sys.exit(6)
+    if bad:
+        say(sys.stdout, "",
+            "Something in the chain no longer holds: a receipt, a citation, or the judgment",
+            "the action rests on. The receipt outlives the record it cites; the record",
+            "cannot be rewritten under it.")
+        sys.exit(6)
+    say(sys.stdout, "",
+        "Ledger 1 (what entered), ledger 2 (what was decided) and ledger 3 (what was done)",
+        "reconcile by digest, and a reader who trusts none of the parties can do this too.")
+    sys.exit(0)
+
+
 def cmd_tamper(args):
     state = load_session()
     _, receipt = newest_receipt(state["session"])
@@ -541,6 +842,23 @@ def main():
 
     rollback = verbs.add_parser("rollback", help="delete the session's newest receipt")
     rollback.set_defaults(run=cmd_rollback)
+
+    read = verbs.add_parser("read", help="read a vendor's record through the engine, receipted (Act 8)")
+    read.add_argument("vendor_id", metavar="vendor-id", help="the ticket system's id, e.g. V-1042")
+    read.add_argument("--token", help="a bearer token from the identity provider; $ATTEST_TOKEN otherwise")
+    read.set_defaults(run=cmd_read)
+
+    act = verbs.add_parser("act", help="perform a write through the engine, citing the judgment (Act 8)")
+    act.add_argument("vendor_id", metavar="vendor-id")
+    act.add_argument("status", help="the status to set, e.g. approved")
+    act.add_argument("--reason", help="recorded by the ticket system beside the status")
+    act.add_argument("--token", help="a bearer token from the identity provider; $ATTEST_TOKEN otherwise")
+    act.add_argument("--decision", metavar="DIGEST",
+                     help="claim this record digest instead of the book's line — the refusal beat")
+    act.set_defaults(run=cmd_act)
+
+    chain = verbs.add_parser("chain", help="verify the engine's store with the decision book: three ledgers (Act 8)")
+    chain.set_defaults(run=cmd_chain)
 
     args = parser.parse_args()
     args.run(args)

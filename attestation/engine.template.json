@@ -1,0 +1,29 @@
+{
+  "engineVersion": "1",
+  "authority": "__AUTHORITY__",
+  "seed": "/private/engine.seed",
+  "store": "/engine/store",
+  "registry": "/private/registry.jsonl",
+  "decisionRecords": "/var/lib/engine/decisions",
+  "listen": "127.0.0.1:8788",
+  "catalog": "/usr/local/share/engine/catalog",
+  "runtime": "/usr/local/libexec/mcp-runtime-shim.sh",
+  "adapters": "/usr/local/bin",
+  "identity": {
+    "issuer": "https://issuer.enterprise-demo.invalid",
+    "audience": "__AUTHORITY__",
+    "keys": "/engine-pin/issuer-keys.json"
+  },
+  "platforms": {
+    "tickets": {
+      "binding": "tickets@sha256:__BINDING__",
+      "credentials": {
+        "live": {"file": "/etc/engine/credentials/tickets/live.json"},
+        "write": {"file": "/etc/engine/credentials/tickets/write.json"}
+      },
+      "user": "engine-tickets",
+      "endpoint": "tickets.enterprise-demo.invalid",
+      "write": true
+    }
+  }
+}

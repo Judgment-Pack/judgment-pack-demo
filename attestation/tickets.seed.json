@@ -1,0 +1,26 @@
+{
+  "V-1042": {
+    "name": "Northwind Analytics Ltd",
+    "status": "pending",
+    "requestedBy": "procurement",
+    "facts": {
+      "request": {"type": "new-vendor-onboarding"},
+      "submission": {"completeness": "complete"},
+      "vendor": {"taxFormStatus": "received", "sanctionsScreening": {"status": "clear"}},
+      "engagement": {"annualSpendUsd": "84000"}
+    },
+    "evidence": {"sanctions-screening": "present", "tax-form": "present"}
+  },
+  "V-2077": {
+    "name": "Meridian Maritime Holdings SA",
+    "status": "pending",
+    "requestedBy": "procurement",
+    "facts": {
+      "request": {"type": "new-vendor-onboarding"},
+      "submission": {"completeness": "complete"},
+      "vendor": {"taxFormStatus": "received", "sanctionsScreening": {"status": "match"}},
+      "engagement": {"annualSpendUsd": "120000"}
+    },
+    "evidence": {"sanctions-screening": "present", "tax-form": "present"}
+  }
+}

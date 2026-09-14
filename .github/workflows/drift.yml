@@ -229,3 +229,37 @@ jobs:
               --format json | grep -q "\"outcomeId\":\"match\""
           '
           docker compose down
+
+      - name: The engine performs a write after a person asks, and refuses without a judgment (Act 8)
+        # Nothing else covers the executor end to end: a receipted read, a
+        # judgment citing it, an action minted under a person's token, the
+        # three ledgers verified together -- and the refusals the ladder makes
+        # before any executor runs. The stand-in's catalog pin must be current.
+        run: |
+          test "$(sha256sum attestation/ticket-mcp-server.py | cut -d' ' -f1)" = \
+               "$(grep -o 'stand-in@sha256:[0-9a-f]*' attestation/catalog/tickets.json | head -1 | cut -d: -f2)" \
+            || { echo "::error::catalog/tickets.json pins a stale digest of ticket-mcp-server.py"; exit 1; }
+          docker compose up -d openhands engine
+          for i in $(seq 1 30); do
+            docker compose exec -T openhands sh -c 'curl -fsS http://127.0.0.1:8788/publickey' >/dev/null 2>&1 && break
+            sleep 1
+          done
+          docker compose exec -T openhands sh -c 'curl -fsS http://127.0.0.1:8788/publickey' >/dev/null \
+            || { echo "::error::engine never answered on the sandbox loopback"; docker compose logs engine; exit 1; }
+          TOKEN=$(docker compose exec -T engine issuer mint /private/issuer --subject ci-approver)
+          docker compose exec -T -e ATTEST_TOKEN="$TOKEN" -w /projects/enterprise-demo openhands sh -ec '
+            attest read V-1042
+            jpack experimental evaluate --pack-id vendor-onboarding \
+              --facts attested/vendor-facts.json --evidence attested/vendor-evidence.json \
+              --cites attested/cites.json | grep -q "outcome approve"
+            if ATTEST_TOKEN= attest act V-1042 approved; then echo "a write with no requester went through"; exit 1; fi
+            if attest act V-1042 rejected --decision sha256:0000000000000000000000000000000000000000000000000000000000000000; then
+              echo "a write citing no judgment went through"; exit 1
+            fi
+            attest act V-1042 approved --reason ci | grep -q "\"previous\": \"pending\""
+            grep -q "\"status\": \"approved\"" attested/action.json
+            attest chain
+            sed -i "s/\"outcomeId\":\"approve\"/\"outcomeId\":\"reject\"/" audit/evaluations.jsonl
+            if attest chain; then echo "a rewritten judgment still verified under the action receipt"; exit 1; fi
+          '
+          docker compose down

@@ -133,7 +133,9 @@ script: browse, present the pack as a grounded table, the clean approval,
 the forced reject, and the escalation the honesty rule exists for. Act 7 replays a year of
 ledger decisions ([`projects/history-replay`](projects/history-replay)) against a policy drafted
 from the documents with one line moved on purpose, and reads the runtime's history profile as the
-questions it is: which quarter disagrees, and where the cases sit against the moved line.
+questions it is: which quarter disagrees, and where the cases sit against the moved line. Act 8
+performs the write a judgment proposed — on a person's request, through the engine, which
+refuses it unless the judgment it cites is there — and verifies the three ledgers together.
 
 ### Attested inputs (Act 4)
 
@@ -152,6 +154,21 @@ runs a **decision desk** (`attest decide`): it evaluates against a copy of the p
 into its own container at image build, so the receipted judgment comes from law the sandbox
 cannot reach — the copy you can edit is not the copy that judges. Reset before you rebuild:
 the baked copy is the build context.
+
+### Writes after a person asks (Act 8)
+
+A third container runs the same gateway as the **engine** — its one-configuration-file form,
+with the executor (`127.0.0.1:8788`, published nowhere). `attest read` acquires a vendor's
+record from a ticket system through the engine's MCP adapter, with a receipt that names the
+tool, the adapter and the caller; the runtime judges the facts citing that receipt; and
+`attest act`, under a token the identity provider minted for a person, asks the engine to
+perform the write. The engine holds the requester, the session, the platform's write binding,
+the tool, the decision claim and the citations before any executor runs, and mints an action
+receipt naming who asked, which judgment, which receipts, which tool and what the target
+answered. `attest chain` verifies the engine's store with this project's decision book: three
+ledgers reconciled by digest. The ticket system, the identity provider and the container
+runtime behind the engine are stand-ins the demo ships; [attestation/README.md](attestation/README.md)
+says which is which.
 
 ## License
 

@@ -483,6 +483,124 @@ pack. `cite-history.py` finds no session → run Act 4's `attest screen` first. 
 every row → someone moved the line back; the point of the act is that it must not be moved to
 make history pass, so restore the file from git and replay.
 
+## Act 8 — the write, after a person asks (~4 min)
+
+Every act so far ended at a judgment. This one performs the write the judgment proposed — and
+only on a request from a person. The rule: **a pack authorizes nothing.** A write happens on a
+request from an authenticated person, through the engine, which refuses it unless the judgment
+it cites is there; the receipt it mints says who asked, which judgment, which receipts, which
+tool, and what the target system answered. Three ledgers, one chain of custody.
+
+Beside the desk runs the **engine** (`127.0.0.1:8788`): the same gateway in its
+one-configuration-file form, with one platform, `tickets`, marked writable. The ticket system
+behind it, the identity provider that mints tokens, and the container runtime that starts the
+platform's MCP server are stand-ins the demo ships — [attestation/README.md](../../attestation/README.md)
+says exactly what is real and what is stood in for. The engine, the adapter, the receipts and
+the verifier are the real ones.
+
+1. **A person asks** — from the **host** terminal, not the sandbox, which holds no key:
+
+   ```bash
+   docker compose exec engine issuer mint /private/issuer --subject "<your name, as the identity provider knows it>"
+   ```
+
+   A token, valid ten minutes. Paste it into the sandbox terminal:
+
+   ```bash
+   export ATTEST_TOKEN=<paste>
+   ```
+
+   *"The agent can propose. It cannot mint one of these."*
+
+2. **Read the record, with a receipt** (sandbox terminal, in `projects/enterprise-demo`):
+
+   ```bash
+   attest read V-1042
+   ```
+
+   The engine runs the ticket system's `get_vendor` through the MCP adapter, as the platform's
+   own user, and signs what came back together with the acquisition record — which tool,
+   through which adapter, when — and the caller the token names. Ledger 1. The record carries
+   the onboarding facts as the ticket system filed them; `attest` writes them beside the
+   citation.
+
+3. **Judge, citing the receipt**:
+
+   ```bash
+   jpack experimental evaluate --pack-id vendor-onboarding \
+     --facts attested/vendor-facts.json --evidence attested/vendor-evidence.json \
+     --cites attested/cites.json
+   tail -1 audit/evaluations.jsonl | jq '{kind: .disposition.kind, outcome: .disposition.outcomeId, cites}'
+   ```
+
+   **approve** — and the book's newest line carries `cites`: the receipt this judgment relied
+   on, recorded as given and verified by nothing here (runtime ADR-0033). Ledger 2.
+
+4. **Perform the write**:
+
+   ```bash
+   attest act V-1042 approved --reason "vendor-onboarding 0.1.0, approve-standard"
+   ```
+
+   Before any executor runs, the engine holds, in order: the requester (the token), the
+   session, the platform's write binding, the tool, the arguments, the decision claim — the
+   SHA-256 of that line of the book — and the citation, resolved in its own store under its own
+   key. Then the adapter calls `update_vendor_status`, and the engine mints the action receipt:
+   requester, decision, cites, tool, and the target's answer (`pending` → `approved`). Ledger 3
+   — and `attest` then seals the session: two receipts, the read and the write, registered with
+   the key holder.
+
+   **Stage line:** *"the receipt says who asked, which judgment, and what the ticket system said
+   back. It does not say the write was right, and it does not say they approved it. A token
+   proves who asked."*
+
+5. **What refuses** — two requests that never reach the ticket system (run them before beat 4
+   in a rehearsal, while the session is still open, or after a fresh `attest read`):
+
+   ```bash
+   ATTEST_TOKEN= attest act V-1042 approved
+   attest act V-1042 rejected --decision sha256:0000000000000000000000000000000000000000000000000000000000000000
+   ```
+
+   The first is refused at the **requester** step (`401`): nobody asked. The second at the
+   **decision** step: no line of the book has that digest. Nothing was sent, nothing was minted.
+   *"The executor refuses any write that cites no verifying judgment — and 'verifying' means
+   exactly what `verify` means by it: the record is there, the receipts are there, under this
+   key. The engine interprets nothing."*
+
+6. **Close the chain** — then break it:
+
+   ```bash
+   attest chain
+   ```
+
+   Every receipt in the session `ok`, the action's decision resolved to the book's line, its
+   citation resolved in the store: three ledgers reconciled by digest, under a pin the engine
+   never served. Now rewrite the judgment after the fact — the sandbox owns the book:
+
+   ```bash
+   sed -i 's/"outcomeId":"approve"/"outcomeId":"reject"/' audit/evaluations.jsonl
+   attest chain
+   ```
+
+   The action receipt now names a decision no line of the book has:
+   `decision-record-mismatch` on the action's own finding. *"The receipt outlives the record. You can rewrite what was
+   decided; you cannot rewrite it under the receipt that cites it."* Restore with
+   `git checkout -- audit/` from the host, or leave it for Act 5's replay to find.
+
+**Act 8 fallbacks**: engine unreachable → `docker compose up -d --force-recreate engine` (the
+desk's recovery; the engine shares the sandbox's namespace). `401` on `attest read` → the token
+is missing, expired (ten minutes), or minted for another audience; mint again on the host.
+`attest act` refused at the **decision** step when you did not mean it → the book's newest
+judgment does not cite this read (a second `attest read` is a new receipt: judge again with the
+new `attested/cites.json`). Refused at the **session** step as sealed → the write already
+happened in this session; a new read opens a new one. The ticket system answering `write
+refused: no valid vendor token` → the write ran under the wrong credentials; compare
+`attestation/catalog/tickets.json` with what the Dockerfile lays down under
+`/etc/engine/credentials`. V-1042 already `approved` from a rehearsal → the act still works (the
+ticket system counts updates), or `./scripts/reset-demo.sh` recreates the engine and the vendor
+is `pending` again — the stand-in's book lives in the container.
+
 **Act 6 fallbacks**: desk unreachable → `docker compose up -d --force-recreate gateway` (bare
 `restart` cannot rejoin a recreated namespace); the desk's book survives that, it is a host
 mount. Forgot to restore the forged pack → repeat beat 3's `cp` in the sandbox, or

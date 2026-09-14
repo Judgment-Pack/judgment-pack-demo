@@ -11,7 +11,7 @@ ARG JUDGMENT_PACK_VERSION=0.21.0
 # The attestation gateway and the derivation rule have no release channels yet,
 # so both are pinned by commit and built from source. When the gateway cuts a
 # release, GATEWAY_REF becomes an attested image pin like the runtime's above.
-ARG GATEWAY_REF=3a9f8a89dbb2a87ebdc25155afe5ea90d2185498
+ARG GATEWAY_REF=03582d9432a73d7d1f03f916e4ef58c7fc6c2773
 ARG DERIVATION_REF=6f5500fb8e61014632f9b4b85e9ce68fcebf0e39
 
 FROM ghcr.io/judgment-pack/judgment-pack:${JUDGMENT_PACK_VERSION} AS runtime
@@ -24,6 +24,11 @@ WORKDIR /src/go
 # `conform` replays the frozen corpus: this image cannot be built from a
 # gateway commit that disagrees with it.
 RUN CGO_ENABLED=0 go build -buildvcs=false -o /out/gateway . && /out/gateway conform
+# Act 8's engine is this same binary carrying three file capabilities, set
+# where the file lands by the gateway's own build/setcap.go (a static helper
+# built here), plus the MCP adapter the executor runs.
+RUN cd /src/build && CGO_ENABLED=0 go build -o /out/setcap setcap.go \
+ && cd /src/adapters/cmd/adapter-mcp && CGO_ENABLED=0 go build -buildvcs=false -o /out/adapter-mcp .
 
 FROM python:3.13-alpine AS derivation-build
 ARG DERIVATION_REF
@@ -61,6 +66,33 @@ COPY --from=runtime --chmod=755 /jpack /usr/local/bin/jpack
 # gateway container consults its own copies of the source and watchlist, so
 # nothing the sandbox edits feeds them.
 COPY --from=gateway-build --chmod=755 /out/gateway /usr/local/bin/gateway
+# Act 8: the engine -- the same gateway in its one-configuration-file form,
+# with the executor. Its copy carries exactly CAP_SETUID, CAP_SETGID and
+# CAP_KILL as file capabilities, which is what lets it switch an adapter to
+# its platform's user, and is executable by its owner alone, as the engine
+# requires of a binary so marked; the verifier copy above carries none. The
+# MCP adapter is the executor. The platform it writes to is a stand-in ticket
+# system (attestation/README.md): its own OS user, credentials owned by that
+# user alone, and a book under a directory that user can write.
+COPY --from=gateway-build --chmod=755 /out/adapter-mcp /usr/local/bin/adapter-mcp
+COPY --from=gateway-build --chown=${HOST_UID}:${HOST_GID} --chmod=700 /out/gateway /usr/local/libexec/engine
+COPY --from=gateway-build /out/setcap /usr/local/libexec/setcap
+RUN /usr/local/libexec/setcap /usr/local/libexec/engine && rm /usr/local/libexec/setcap \
+ && useradd --system --create-home --home-dir /home/engine-tickets --shell /usr/sbin/nologin engine-tickets \
+ && mkdir -p /var/lib/tickets && chown engine-tickets:engine-tickets /var/lib/tickets \
+ && mkdir -p /etc/engine/credentials/tickets /usr/local/share/engine/catalog
+# (the directories above are made here, root-owned and traversable, since a
+# COPY --chmod=600 below would otherwise give the directories it creates the
+# file's mode, and the engine refuses a credentials path its user cannot walk)
+COPY --chown=engine-tickets:engine-tickets --chmod=600 attestation/tickets-credentials/live.json /etc/engine/credentials/tickets/live.json
+COPY --chown=engine-tickets:engine-tickets --chmod=600 attestation/tickets-credentials/write.json /etc/engine/credentials/tickets/write.json
+COPY --chown=engine-tickets:engine-tickets --chmod=644 attestation/tickets.seed.json /var/lib/tickets/vendors.json
+COPY attestation/catalog/tickets.json /usr/local/share/engine/catalog/tickets.json
+COPY attestation/engine.template.json /usr/local/share/engine/engine.template.json
+COPY --chmod=755 attestation/engine-up.sh /usr/local/libexec/engine-up.sh
+COPY --chmod=755 attestation/ticket-mcp-server.py /usr/local/libexec/ticket-mcp-server.py
+COPY --chmod=755 attestation/mcp-runtime-shim.sh /usr/local/libexec/mcp-runtime-shim.sh
+COPY --chmod=755 attestation/issuer.py /usr/local/bin/issuer
 COPY --from=derivation-build /out /usr/local/share/derivation-rule
 COPY --chmod=755 attestation/attest.py /usr/local/bin/attest
 COPY --chmod=755 attestation/ofac-screening-source.py /usr/local/libexec/ofac-screening-source.py
