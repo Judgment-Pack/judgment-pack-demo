@@ -1,0 +1,13 @@
+{
+ "configVersion": "3",
+ "audit": {
+  "dir": "audit"
+ },
+ "packs": {
+  "vendor-onboarding-draft": {
+   "path": "packs/vendor-onboarding-draft.pack.json",
+   "matrix": "packs/history.matrix.json",
+   "description": "The vendor-onboarding policy drafted from the procurement standard alone, with one line moved on purpose; the matrix is the ledger's past decisions, transcribed."
+  }
+ }
+}

@@ -422,6 +422,67 @@ before every build, above). Its receipt proves byte-lineage of the *decision*, n
 of the facts — those are still the caller's claims. What it removes is the one thing the sandbox
 could otherwise do silently: change the law and get an answer that looks the same.
 
+## Act 7 — the draft against the ledger (~3 min)
+
+Every act so far judged one case at a time. This one judges a *pack*: a policy drafted from
+the procurement standard alone, replayed against a year of decisions the ledger already holds.
+The rule that keeps it honest: **documents write the rules, past decisions test them, and the
+two never cross.** The draft was written from the text; the rows' expectations are what was
+recorded, never what the draft produces.
+
+The project is [`../history-replay`](../history-replay): `packs/vendor-onboarding-draft.pack.json`
+is the onboarding policy drafted from the standard, and one line was moved on purpose — the
+committee threshold sits at `200000` where the ledger was decided under `250000`. The matrix
+`packs/history.matrix.json` is thirteen past decisions transcribed mechanically: the facts as
+filed, the outcome as recorded, each row's `origin` naming the ledger quarter it came from.
+
+1. **Replay the ledger** (sandbox terminal, in `../history-replay`):
+
+   ```bash
+   cd ../history-replay
+   jpack packs test --format json | jq '.packs[0] | {status, summary, agreement: .profile.agreement}'
+   ```
+
+   Four rows mismatch — and the profile says which history disagrees: three of Q3's seven, one
+   of Q4's six. *"The draft is wrong somewhere, or the past was inconsistent, or the policy
+   changed. The runtime does not say which. It says where to look."*
+
+2. **Read the line** — the thresholds profile, the reason this act exists:
+
+   ```bash
+   jpack packs test --format json | jq '.packs[0].profile.thresholds[0]'
+   ```
+
+   One boundary, `/engagement/annualSpendUsd` at `200000`. Below it, every past case agrees.
+   Above it, Q3 has four cases and three disagree, the nearest disagreeing at `205000`; Q4 has
+   three and one disagrees, at `212000`. Every disagreement sits just over the line the draft
+   drew, and none sits over the line the ledger was decided under. *"Eleven past cases sit
+   near this line and four were decided the other way. Is the line where the policy means it
+   to be?"* — that is a question for the policy owner, and the answer comes from the standard
+   (`excerpt` in the pack's `sources`: "below the committee threshold"), not from the ledger.
+   Nothing here moves the threshold; a person does, from the document, and replays.
+
+3. **Cite the receipts** (optional, ~1 min, needs Act 4's desk). The ledger's records came
+   under a page receipt the desk minted. Give every row that receipt and replay:
+
+   ```bash
+   ./scripts/cite-history.py          # from the host: the desk's store is on disk
+   jpack packs test --format json | jq '.packs[0].rows[0] | {id, origin, status, cites}'
+   ```
+
+   The matrix now declares `matrixVersion "3"` and each row carries `cites` — the receipt's
+   session, index and signature, as values — on its result. The runtime recorded them as given
+   and verified nothing; `gateway verify` is what resolves a citation. *"A disagreement now
+   traces from the receipt it rests on, through the quarter it came from, to the line it
+   questions."*
+
+**Act 7 fallbacks**: `packs test` reports no `profile` → the runtime predates ADR-0034
+(`jpack version` says which); say so and read the mismatched rows by hand. The profile refuses
+with `JPS-RESOURCE-MATRIX-PROFILE` → the matrix is far larger than this one; the budget is per
+pack. `cite-history.py` finds no session → run Act 4's `attest screen` first. The draft *passes*
+every row → someone moved the line back; the point of the act is that it must not be moved to
+make history pass, so restore the file from git and replay.
+
 **Act 6 fallbacks**: desk unreachable → `docker compose up -d --force-recreate gateway` (bare
 `restart` cannot rejoin a recreated namespace); the desk's book survives that, it is a host
 mount. Forgot to restore the forged pack → repeat beat 3's `cp` in the sandbox, or
