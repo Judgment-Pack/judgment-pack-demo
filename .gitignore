@@ -2,6 +2,8 @@ state/*
 !state/.gitkeep
 gateway-state/*/*
 !gateway-state/*/.gitkeep
+engine-state/*/*
+!engine-state/*/.gitkeep
 __pycache__/
 .env
 slack/deploy/deploy.env

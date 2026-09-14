@@ -141,3 +141,52 @@ is seal a session early, and `attest` mints a fresh session id per run.
   recreates the gateway. The identity survives resets.
 - Seed or pin lost (not both): the entrypoint refuses to serve and prints the
   one command that mints a fresh identity.
+
+## The engine (Act 8)
+
+The engine is the gateway again — the same binary, run as `gateway serve --config` from the
+one configuration file `engine-up.sh` writes at boot from `engine.template.json` — with one
+platform, `tickets`, bound through the catalog file `catalog/tickets.json` and marked writable.
+It is what the plan calls the engine: signer, adapters, verifier, one download. What runs where:
+
+- **engine container** (`engine` service, the sandbox's network namespace, `127.0.0.1:8788`):
+  the engine binary, carrying exactly `CAP_SETUID`, `CAP_SETGID` and `CAP_KILL` as file
+  capabilities so it can switch an adapter to its platform's user, executable by its owner
+  alone; the MCP adapter (`adapter-mcp`), which is the executor; the platform's own OS user
+  `engine-tickets`, its credentials (owned by it, mode 0600), and the stand-in ticket system.
+  Under `engine-state/private`, never mounted into the sandbox: the seed, the seal registry,
+  the written configuration, and the stand-in issuer's private key.
+- **pin** (`engine-state/pin`, read-only in the sandbox): the engine's public key, written from
+  `keygen`'s own stdout at provisioning as the desk's is, and the issuer's public key set.
+- **store** (`engine-state/public`, read-write in the sandbox): receipts and artifacts, the
+  tamper surface, as the desk's is.
+- **decision book** (`projects/enterprise-demo/audit`, read-only in the engine): this project's
+  own `audit/evaluations.jsonl`, where the runtime wrote each judgment. The engine resolves a
+  write's `decision.recordDigest` there by the verifier's rule — every line's SHA-256 — and
+  reads nothing inside a record. The sandbox can edit the book; that is the closing beat.
+
+What is stood in for, and how honestly:
+
+- **The ticket system** is `ticket-mcp-server.py`, an MCP server over stdio with a read tool
+  (`get_vendor`) and a write tool (`update_vendor_status`), its book a JSON file inside the
+  engine container. A real deployment binds a vendor's own server image, pinned by digest, and
+  the engine reaches it the same way. Its "image" pin in the catalog is the digest of the
+  script — CI holds it current — and the runtime shim below runs the script whatever image
+  name it is given.
+- **The container runtime** is `mcp-runtime-shim.sh`. The adapter starts a platform's server
+  through a container runtime (`docker run --rm --name … -v …:/secrets:ro --env-file … -i --
+  IMAGE`) and later asks it `kill` and `inspect`; the shim answers those three verbs by running
+  the stand-in server with the env file's variables — the credentials the engine handed over —
+  and nothing else of the engine's environment. The engine container carries no runtime and
+  reaches no host socket.
+- **The identity provider** is `issuer.py`: one P-256 key pair minted at provisioning, the
+  public half laid where the engine reads it, and `issuer mint` signing a ten-minute ES256
+  token for a named subject. It is run on the host (`docker compose exec engine issuer mint
+  /private/issuer --subject NAME`); the sandbox holds no key. A real deployment names the
+  customer's issuer, audience and key file in the configuration and the engine verifies with
+  nothing but the standard library, exactly as it does here.
+
+What the act does not claim: a token proves who asked, not that they approved this action —
+the plan names that as open, and the receipt does not say it. The write's correctness is the
+ticket system's; the receipt records what it answered. The stand-in's book is in the
+container's writable layer, so recreating the engine puts every vendor back to `pending`.

@@ -27,6 +27,11 @@ services:
       # seal registry are NOT mounted here at all.
       - ./gateway-state/public:/gateway
       - ./gateway-state/pin:/gateway-pin:ro
+      # The engine's store and pin (Act 8), on the same terms: the store
+      # read-write, the pin read-only, and its seed, seal registry and the
+      # stand-in issuer's private key not mounted here at all.
+      - ./engine-state/public:/engine
+      - ./engine-state/pin:/engine-pin:ro
     stdin_open: true
     tty: true
     # Survive host/WSL restarts: the sandbox comes back without a manual
@@ -64,6 +69,33 @@ services:
       # lives in the container's writable layer and the force-recreate the
       # recovery notes push everywhere destroys it.
       - ./gateway-state/desk-audit:/usr/local/share/desk/enterprise-demo/audit
+    restart: unless-stopped
+
+  # The engine (Act 8): the same gateway in its one-configuration-file form,
+  # with the executor -- a write goes through it as an action, refused unless
+  # the judgment it cites is there. Same namespace as the desk, on
+  # 127.0.0.1:8788. Its seed, registry and the stand-in issuer's private key
+  # live under engine-state/private, which the sandbox never mounts. The
+  # decision book it reads is the sandbox project's own, mounted read-only:
+  # the judgment a write relies on is looked up where the runtime wrote it,
+  # and the sandbox can edit that book -- which is the tamper beat.
+  #
+  # Recover after the sandbox is recreated exactly as the desk is recovered:
+  #   docker compose up -d --force-recreate engine
+  engine:
+    image: judgment-pack-demo:${JUDGMENT_PACK_VERSION:-0.21.0}
+    network_mode: "service:openhands"
+    depends_on:
+      - openhands
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    entrypoint: ["/usr/local/libexec/engine-up.sh"]
+    environment:
+      ENGINE_AUTHORITY: ${ENGINE_AUTHORITY:-gateway:enterprise-demo-engine}
+    volumes:
+      - ./engine-state/private:/private
+      - ./engine-state/pin:/engine-pin
+      - ./engine-state/public:/engine
+      - ${PACKS_DIR:-./projects}/enterprise-demo/audit:/var/lib/engine/decisions:ro
     restart: unless-stopped
 
   # Oneshot: registers the jpack MCP server in agent-canvas settings on

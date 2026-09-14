@@ -18,9 +18,19 @@ rm -rf gateway-state/public/store gateway-state/private/registry.jsonl
 # decided during rehearsals, and a demo should open on an empty one exactly as
 # the project's own book does.
 rm -f gateway-state/desk-audit/evaluations.jsonl
+# The engine's store and registry (Act 8) are rehearsal state on the same
+# terms, wiped together; its identity and the stand-in issuer's keys survive.
+# The stand-in ticket book lives inside the engine container, so recreating
+# it is what puts the vendor back to pending.
+rm -rf engine-state/public/store engine-state/private/registry.jsonl
 if command -v docker >/dev/null 2>&1 && [ -n "$(docker compose ps -q gateway 2>/dev/null)" ]; then
   docker compose up -d --force-recreate gateway
 else
   echo "note: gateway not running; its store was wiped on disk only"
+fi
+if command -v docker >/dev/null 2>&1 && [ -n "$(docker compose ps -q engine 2>/dev/null)" ]; then
+  docker compose up -d --force-recreate engine
+else
+  echo "note: engine not running; its store was wiped on disk only"
 fi
 echo "demo reset: workspace restored"

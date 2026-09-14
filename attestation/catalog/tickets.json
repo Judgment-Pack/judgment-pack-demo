@@ -1,0 +1,18 @@
+{
+  "bindingVersion": "1",
+  "platform": "tickets",
+  "operations": {
+    "live": {
+      "shape": "mcp",
+      "server": {"image": "enterprise-demo/ticket-mcp:stand-in@sha256:dcd930e515de139cfd1fe4299d70e6a8b2271beb5ddaad6e81062ccc78e464c3"},
+      "tools": ["get_vendor"],
+      "licence": "Apache-2.0"
+    },
+    "write": {
+      "shape": "mcp",
+      "server": {"image": "enterprise-demo/ticket-mcp:stand-in@sha256:dcd930e515de139cfd1fe4299d70e6a8b2271beb5ddaad6e81062ccc78e464c3"},
+      "tools": ["update_vendor_status"],
+      "licence": "Apache-2.0"
+    }
+  }
+}
