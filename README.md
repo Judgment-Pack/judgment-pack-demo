@@ -1,5 +1,11 @@
 # judgment-pack demo
 
+> **Deprecated.** This sandbox is no longer maintained and takes no new work. It will be replaced
+> by a hosted application; until then, the open local experience is the
+> [Judgment-Pack Desk](https://github.com/Judgment-Pack/judgment-pack-desk). The runtime, gateway,
+> runner and specification repositories are unaffected. Issues and pull requests opened here are
+> closed without action.
+
 A clone-and-go sandbox for [Judgment Packs](https://github.com/Judgment-Pack/judgment-pack-runtime):
 one `docker compose up` gives you a browser workspace — chat, file explorer, editor, terminal —
 with the judgment-pack runtime pre-wired as an MCP server and a verified sample project ready to
